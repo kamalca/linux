@@ -6,6 +6,7 @@
 #ifndef _VIRT_COCO_RMM_DA_H_
 #define _VIRT_COCO_RMM_DA_H_
 
+#include <linux/arm-smccc-rhi.h>
 #include <linux/arm-smccc-rmi.h>
 #include <linux/arm-rmi-cmds.h>
 #include <linux/pci.h>
@@ -15,6 +16,7 @@
 #include <linux/atomic.h>
 #include <linux/kref.h>
 #include <linux/wait.h>
+
 
 #define MAX_CACHE_OBJ_SIZE	SZ_16M
 #define CACHE_CHUNK_SIZE	SZ_4K
@@ -239,5 +241,7 @@ int cca_pdev_refresh_stream_key(struct pci_dev *pdev1,
 		struct pci_dev *pdev2, unsigned long stream_handle);
 int cca_pdev_purge_stream_key(struct pci_dev *pdev1,
 		struct pci_dev *pdev2, unsigned long stream_handle);
+void cca_vdev_unlock_and_destroy(struct realm *realm, struct pci_dev *pdev,
+		struct pci_dev *pf0_dev);
 
 #endif

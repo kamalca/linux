@@ -9,6 +9,8 @@
 #include <linux/arm-smccc-rmi.h>
 #include <linux/bug.h>
 #include <linux/types.h>
+#include <linux/bitfield.h>
+
 
 #define RMI_MAX_ADDR_LIST	256
 
@@ -40,6 +42,11 @@ static inline bool rmm_is_active(void)
 {
 	/* If RMM is active we should atlest find non zero S2SZ field */
 	return rmi_feat_reg(0) != 0;
+}
+
+static inline bool rmm_has_reg2_feature(unsigned long feature)
+{
+	return !!u64_get_bits(rmi_feat_reg(2), feature);
 }
 
 long rmi_sro_memxfer_execute(struct rmi_sro_state *sro, gfp_t gfp);
@@ -903,6 +910,30 @@ rmi_pdev_stream_key_purge(unsigned long pdev1_phys,
 
 	arm_smccc_1_1_invoke(SMC_RMI_PDEV_STREAM_KEY_PURGE, pdev1_phys,
 			     pdev2_phys, stream_handle, &res);
+
+	return res.a0;
+}
+
+static inline unsigned long
+rmi_vdev_unlock(unsigned long rd, unsigned long pdev_phys,
+		unsigned long vdev_phys)
+{
+	struct arm_smccc_res res;
+
+	arm_smccc_1_1_invoke(SMC_RMI_VDEV_UNLOCK,
+			     rd, pdev_phys, vdev_phys, &res);
+
+	return res.a0;
+}
+
+static inline unsigned long
+rmi_vdev_destroy(unsigned long rd, unsigned long pdev_phys,
+		 unsigned long vdev_phys)
+{
+	struct arm_smccc_res res;
+
+	arm_smccc_1_1_invoke(SMC_RMI_VDEV_DESTROY,
+			     rd, pdev_phys, vdev_phys, &res);
 
 	return res.a0;
 }
