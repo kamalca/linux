@@ -857,6 +857,30 @@ static inline unsigned long rmi_vdev_abort(unsigned long vdev_phys)
 	return res.a0;
 }
 
+static inline unsigned long
+rmi_vdev_create(unsigned long rd, unsigned long pdev_phys,
+		unsigned long vdev_phys, unsigned long vdev_params_phys)
+{
+	struct arm_smccc_res res;
+
+	arm_smccc_1_1_invoke(SMC_RMI_VDEV_CREATE, rd, pdev_phys,
+			     vdev_phys, vdev_params_phys, &res);
+
+	return res.a0;
+}
+
+static inline unsigned long
+rmi_vdev_lock(unsigned long rd, unsigned long pdev_phys,
+	      unsigned long vdev_phys)
+{
+	struct arm_smccc_res res;
+
+	arm_smccc_1_1_invoke(SMC_RMI_VDEV_LOCK,
+			     rd, pdev_phys, vdev_phys, &res);
+
+	return res.a0;
+}
+
 int rmi_psmmu_activate(unsigned long psmmu_phys,
 		unsigned long psmmu_params_phys, unsigned long *rmi_ret);
 int rmi_psmmu_deactivate(unsigned long psmmu_phys, unsigned long *rmi_ret);
