@@ -126,4 +126,21 @@ struct tsm_dev *find_tsm_dev(int id);
 struct pci_ide;
 int tsm_ide_stream_register(struct pci_ide *ide);
 void tsm_ide_stream_unregister(struct pci_ide *ide);
+
+struct kvm;
+#ifdef CONFIG_TSM
+int tsm_bind(struct device *dev, struct kvm *kvm, u64 tdi_id);
+int tsm_unbind(struct device *dev);
+#else
+static inline int tsm_bind(struct device *dev, struct kvm *kvm, u64 tdi_id)
+{
+	return -EINVAL;
+}
+
+static inline int tsm_unbind(struct device *dev)
+{
+	return 0;
+}
+#endif
+
 #endif /* __TSM_H */
