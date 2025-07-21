@@ -10,6 +10,7 @@
 #include <linux/cleanup.h>
 #include <linux/pci-tsm.h>
 #include <linux/pci-ide.h>
+#include <uapi/linux/iommufd.h>
 
 static ssize_t pci_mode_show(struct device *dev, struct device_attribute *attr,
 			     char *buf)
@@ -262,6 +263,18 @@ int tsm_unbind(struct device *dev)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(tsm_unbind);
+
+ssize_t tsm_guest_req(struct device *dev,
+		struct tsm_guest_req_info *info, u64 *tsm_code)
+{
+	if (!dev_is_pci(dev))
+		return -EINVAL;
+
+	return pci_tsm_guest_req(to_pci_dev(dev), info->op, info->tvm_arch,
+				 info->req, info->req_len, info->resp,
+				 info->resp_len, tsm_code);
+}
+EXPORT_SYMBOL_GPL(tsm_guest_req);
 
 static void tsm_release(struct device *dev)
 {

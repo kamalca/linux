@@ -401,7 +401,8 @@ EXPORT_SYMBOL_GPL(pci_tsm_bind);
 /**
  * pci_tsm_guest_req() - helper to marshal guest requests to the TSM driver
  * @pdev: @pdev representing a bound tdi
- * @scope: caller asserts this passthrough request is limited to TDISP operations
+ * @op: guest-initiated request operation
+ * @tvm_arch: guest TVM architecture
  * @req_in: Input payload forwarded from the guest
  * @in_len: Length of @req_in
  * @req_out: Output payload buffer response to the guest
@@ -410,7 +411,7 @@ EXPORT_SYMBOL_GPL(pci_tsm_bind);
  *
  * This is a common entry point for requests triggered by userspace KVM-exit
  * service handlers responding to TDI information or state change requests. The
- * scope parameter limits requests to TDISP state management, or limited debug.
+ * operation parameter limits requests to guest-initiated TSM operations.
  * This path is only suitable for commands and results that are the host kernel
  * has no use, the host is only facilitating guest to TSM communication.
  *
@@ -423,7 +424,9 @@ EXPORT_SYMBOL_GPL(pci_tsm_bind);
  * Context: Caller is responsible for calling this within the pci_tsm_bind()
  * state of the TDI.
  */
-ssize_t pci_tsm_guest_req(struct pci_dev *pdev, enum pci_tsm_req_scope scope,
+ssize_t pci_tsm_guest_req(struct pci_dev *pdev,
+			  enum iommu_vdevice_tsm_guest_req_op op,
+			  enum iommu_vdevice_tsm_guest_tvm_arch tvm_arch,
 			  sockptr_t req_in, size_t in_len, sockptr_t req_out,
 			  size_t out_len, u64 *tsm_code)
 {
@@ -431,9 +434,27 @@ ssize_t pci_tsm_guest_req(struct pci_dev *pdev, enum pci_tsm_req_scope scope,
 	struct pci_tdi *tdi;
 	int rc;
 
-	/* Forbid requests that are not directly related to TDISP operations */
-	if (scope > PCI_TSM_REQ_STATE_CHANGE)
+	switch (tvm_arch) {
+	case IOMMU_VDEVICE_TSM_TVM_ARCH_CCA:
+	case IOMMU_VDEVICE_TSM_TVM_ARCH_SEV:
+	case IOMMU_VDEVICE_TSM_TVM_ARCH_TDX:
+		break;
+	default:
 		return -EINVAL;
+	}
+
+	switch (op) {
+	case TSM_REQ_VALIDATE_MMIO:
+	case TSM_REQ_SET_TDI_STATE:
+		break;
+	case TSM_REQ_SEV_ENABLE_DMA:
+	case TSM_REQ_SEV_DISABLE_DMA:
+		if (tvm_arch == IOMMU_VDEVICE_TSM_TVM_ARCH_SEV)
+			break;
+		fallthrough;
+	default:
+		return -EINVAL;
+	}
 
 	ACQUIRE(rwsem_read_intr, lock)(&pci_tsm_rwsem);
 	if ((rc = ACQUIRE_ERR(rwsem_read_intr, &lock)))
@@ -453,8 +474,9 @@ ssize_t pci_tsm_guest_req(struct pci_dev *pdev, enum pci_tsm_req_scope scope,
 	tdi = pdev->tsm->tdi;
 	if (!tdi)
 		return -ENXIO;
-	return to_pci_tsm_ops(pdev->tsm)->guest_req(tdi, scope, req_in, in_len,
-						    req_out, out_len, tsm_code);
+	return to_pci_tsm_ops(pdev->tsm)->guest_req(tdi, op, tvm_arch, req_in,
+						    in_len, req_out, out_len,
+						    tsm_code);
 }
 EXPORT_SYMBOL_GPL(pci_tsm_guest_req);
 
