@@ -565,6 +565,21 @@ static ssize_t cca_tsm_guest_req(struct pci_tdi *tdi,
 		/* error */
 		return len;
 	}
+	case TSM_REQ_REGEN_OBJECT:
+	{
+		struct arm64_vdev_object_regen_guest_req req_obj;
+
+		if (req_len != sizeof(req_obj))
+			return -EINVAL;
+
+		if (copy_from_user((void *)&req_obj, req.user, req_len))
+			return -EFAULT;
+
+		if (req_obj.object_type == RHI_DA_OBJECT_INTERFACE_REPORT)
+			return cca_vdev_update_interface_report(pdev);
+		else
+			return -EINVAL;
+	}
 	default:
 		return -EINVAL;
 	}
