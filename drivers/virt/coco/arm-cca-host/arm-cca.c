@@ -577,6 +577,10 @@ static ssize_t cca_tsm_guest_req(struct pci_tdi *tdi,
 
 		if (req_obj.object_type == RHI_DA_OBJECT_INTERFACE_REPORT)
 			return cca_vdev_update_interface_report(pdev);
+		else if (req_obj.object_type == RHI_DA_OBJECT_MEASUREMENT)
+			return cca_vdev_update_device_measurements(pdev,
+								   req_obj.flags,
+								   (u8 *)req_obj.nonce);
 		else
 			return -EINVAL;
 	}
