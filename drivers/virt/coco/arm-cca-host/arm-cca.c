@@ -15,6 +15,7 @@
 #include <linux/pci-doe.h>
 #include <linux/pci.h>
 #include <linux/kvm_host.h>
+#include <asm/rmi-da.h>
 
 #include "rmi-da.h"
 
@@ -516,6 +517,53 @@ static ssize_t cca_tsm_guest_req(struct pci_tdi *tdi,
 			return -EINVAL;
 
 		return cca_vdev_device_start(pdev);
+	}
+	case TSM_REQ_OBJECT_INFO:
+	{
+		int object_size;
+		struct arm64_vdev_object_size_guest_req req_obj;
+
+		if (req_len != sizeof(req_obj))
+			return -EINVAL;
+
+		if (copy_from_user((void *)&req_obj, req.user, req_len))
+			return -EFAULT;
+		object_size = cca_vdev_get_object_size(pdev, req_obj.object_type);
+		if (object_size > 0) {
+			if (resp_len < sizeof(object_size))
+				return -EINVAL;
+			if (copy_to_user(resp.user, &object_size, sizeof(object_size)))
+				return -EFAULT;
+
+			if (resp_len != sizeof(object_size))
+				return resp_len - sizeof(object_size);
+			return 0;
+		}
+		/* error */
+		return object_size;
+	}
+	case TSM_REQ_READ_OBJECT:
+	{
+		int len;
+		struct arm64_vdev_object_read_guest_req req_obj;
+
+		if (req_len != sizeof(req_obj))
+			return -EINVAL;
+
+		if (copy_from_user((void *)&req_obj, req.user, req_len))
+			return -EFAULT;
+
+		len = cca_vdev_read_cached_object(pdev,
+						  req_obj.object_type,
+						  req_obj.offset,
+						  resp_len, resp.user);
+		if (len > 0) {
+			if (resp_len != len)
+				return resp_len - len;
+			return 0;
+		}
+		/* error */
+		return len;
 	}
 	default:
 		return -EINVAL;

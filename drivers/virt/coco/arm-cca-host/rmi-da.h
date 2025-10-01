@@ -249,5 +249,8 @@ void cca_vdev_unlock_and_destroy(struct realm *realm, struct pci_dev *pdev,
 int cca_vdev_device_map(struct pci_dev *pdev, unsigned long gpa_base,
 		unsigned long gpa_top, unsigned long pa_base);
 int cca_vdev_device_start(struct pci_dev *pdev);
+int cca_vdev_get_object_size(struct pci_dev *pdev, int type);
+int cca_vdev_read_cached_object(struct pci_dev *pdev, int type, unsigned long offset,
+		unsigned long max_len, void __user *user_buf);
 
 #endif
