@@ -248,5 +248,6 @@ void cca_vdev_unlock_and_destroy(struct realm *realm, struct pci_dev *pdev,
 		struct pci_dev *pf0_dev);
 int cca_vdev_device_map(struct pci_dev *pdev, unsigned long gpa_base,
 		unsigned long gpa_top, unsigned long pa_base);
+int cca_vdev_device_start(struct pci_dev *pdev);
 
 #endif
