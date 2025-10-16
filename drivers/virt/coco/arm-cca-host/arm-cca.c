@@ -476,6 +476,7 @@ static ssize_t cca_tsm_guest_req(struct pci_tdi *tdi,
 		sockptr_t req, size_t req_len, sockptr_t resp,
 		size_t resp_len, u64 *tsm_code)
 {
+	struct pci_dev *pdev = tdi->pdev;
 	/*
 	 * reject the guest request if VMM was using the link tsm wrongly.
 	 * The guest was using a wrong CC archiecture with this link tsm
@@ -486,7 +487,24 @@ static ssize_t cca_tsm_guest_req(struct pci_tdi *tdi,
 	if (req.is_kernel || resp.is_kernel)
 		return -EINVAL;
 
+	switch (req_op) {
+	case TSM_REQ_VALIDATE_MMIO:
+	{
+		struct arm64_vdev_validate_mmio_guest_req req_obj;
+
+		if (req_len != sizeof(req_obj))
+			return -EINVAL;
+
+		if (copy_from_user((void *)&req_obj, req.user, req_len))
+			return -EFAULT;
+
+		return cca_vdev_device_map(pdev, req_obj.gpa_base,
+					   req_obj.gpa_top,
+					   req_obj.pa_base);
+	}
+	default:
 		return -EINVAL;
+	}
 }
 
 static struct pci_tsm_ops cca_link_pci_ops = {
