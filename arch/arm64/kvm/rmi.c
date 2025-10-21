@@ -618,6 +618,11 @@ free_rd:
 	return r;
 }
 
+static int rmi_rtt_dev_unmap(unsigned long rd_phys,
+		unsigned long base, unsigned long top,
+		unsigned long *out_ipa, unsigned long *out_desc,
+		unsigned long *rmi_ret);
+
 static void realm_unmap_private_range(struct kvm *kvm,
 				      unsigned long start,
 				      unsigned long end,
@@ -626,16 +631,33 @@ static void realm_unmap_private_range(struct kvm *kvm,
 	struct realm *realm = &kvm->arch.realm;
 	unsigned long rd = virt_to_phys(realm->rd);
 	unsigned long next_addr, addr;
+	struct rtt_entry rtt_entry;
 	long ret;
 
+	/* Called with mmu_lock held, so RTT entry can't change. */
+	lockdep_assert_held_write(&kvm->mmu_lock);
+
+	/* An unmap request won't mix different RIPAS ranges. */
+	if (rmi_rtt_read_entry(rd, start, KVM_PGTABLE_LAST_LEVEL, &rtt_entry))
+		return;
+
 	for (addr = start; addr < end; addr = next_addr) {
+		unsigned long rmi_ret;
 		unsigned long out_range;
 		unsigned long flags = RMI_ADDR_TYPE_SINGLE;
 		/* TODO: Optimise using RMI_ADDR_TYPE_LIST */
 
 retry:
-		ret = rmi_rtt_data_unmap(rd, addr, end, flags, 0,
-					 &next_addr, &out_range, NULL);
+		if (rtt_entry.ripas == RMI_DEV)
+			ret = rmi_rtt_dev_unmap(rd, addr, end,
+						&next_addr, &out_range,
+						&rmi_ret);
+		else
+			ret = rmi_rtt_data_unmap(rd, addr, end, flags, 0,
+						 &next_addr, &out_range, NULL);
+
+		if (!ret && rtt_entry.ripas == RMI_DEV)
+			ret = rmi_ret;
 		if (WARN_ON(ret < 0))
 			return;
 
@@ -663,6 +685,7 @@ retry:
 		if (WARN_ON(ret))
 			break;
 
+		//FIXME!! where are we freeing the private page?
 		if (may_block)
 			cond_resched_rwlock_write(&kvm->mmu_lock);
 	}
@@ -1061,10 +1084,27 @@ static int realm_set_ipa_state(struct kvm_vcpu *vcpu,
 			       unsigned long *top_ipa)
 {
 	struct kvm *kvm = vcpu->kvm;
-	int ret = ripas_change(kvm, vcpu, start, end, RIPAS_SET, top_ipa);
+	int ret;
 
-	if (!ret && ripas == RMI_EMPTY && *top_ipa != start)
-		realm_unmap_private_range(kvm, start, *top_ipa, false);
+	/*
+	 * We use the RIPAS value to decide between a data_destroy or a
+	 * dev_mem_unmap. Hence call realm_unmap_private_range() before
+	 * ripas_change().
+	 *
+	 * Technically, for private RAM, we don't need to call
+	 * realm_unmap_private_range(), because any RIPAS change via RSI would
+	 * trigger a memory fault exit. That would, in turn, invalidate the
+	 * guest's memfd range, which then triggers realm_unmap_private_range()
+	 * automatically.
+	 *
+	 * However, this doesn’t apply to RIPAS_DEV, because we currently
+	 * lack a user-space API to call realm_dev_mem_unmap() in response to a
+	 * memory fault exit. Therefore, the unmap must happen explicitly before
+	 * the RIPAS change.
+	 */
+	if (ripas == RMI_EMPTY)
+		realm_unmap_private_range(kvm, start, end, false);
+	ret = ripas_change(kvm, vcpu, start, end, RIPAS_SET, top_ipa);
 
 	return ret;
 }
@@ -1326,6 +1366,27 @@ static int rmi_rtt_dev_map(unsigned long rd_phys, unsigned long vdev_phys,
 	return 0;
 }
 
+static int rmi_rtt_dev_unmap(unsigned long rd_phys,
+		unsigned long base, unsigned long top,
+		unsigned long *out_ipa, unsigned long *out_desc,
+		unsigned long *rmi_ret)
+{
+	unsigned long flags = RMI_ADDR_TYPE_SINGLE;
+	struct rmi_sro_state *sro __free(kfree) = kmalloc_obj(*sro);
+	if (!sro)
+		return -ENOMEM;
+
+	*rmi_ret = rmi_sro_memxfer_cmd(sro, GFP_KERNEL, SMC_RMI_RTT_DEV_UNMAP,
+				       rd_phys, base, top, flags, 0);
+	if (*rmi_ret)
+		return 0;
+
+	*out_ipa = sro->regs.a1;
+	*out_desc = sro->regs.a2;
+
+	return 0;
+}
+
 static int rmi_rtt_dev_validate(unsigned long rd_phys, unsigned long rec_phys,
 		unsigned long base, unsigned long top, unsigned long *out_top,
 		unsigned long *rmi_ret)
@@ -1426,9 +1487,12 @@ int realm_dev_mem_map(struct kvm *kvm, unsigned long pdev_phys,
 		unsigned long end_ipa, unsigned long start_pa)
 {
 	int ret;
+	unsigned long rmi_ret;
 	unsigned long top_ipa;
 	unsigned long base_ipa = start_ipa;
+	struct realm *realm = &kvm->arch.realm;
 	struct kvm_s2_mmu *mmu = &kvm->arch.mmu;
+	phys_addr_t rd_phys = virt_to_phys(realm->rd);
 	struct kvm_mmu_memory_cache cache = { .gfp_zero = __GFP_ZERO };
 
 	do {
@@ -1456,6 +1520,19 @@ int realm_dev_mem_map(struct kvm *kvm, unsigned long pdev_phys,
 		for (start_ipa = ALIGN(base_ipa, RMM_L2_BLOCK_SIZE);
 		     ((start_ipa + RMM_L2_BLOCK_SIZE) < end_ipa); start_ipa += RMM_L2_BLOCK_SIZE)
 			fold_rtt(&kvm->arch.realm, start_ipa, RMM_RTT_BLOCK_LEVEL);
+	} else {
+		/* unmap the partial mapping. [base_ipa, start_ipa) */
+		while (start_ipa > base_ipa) {
+			unsigned long out_ipa;
+			unsigned long out_range;
+
+			ret = rmi_rtt_dev_unmap(rd_phys, base_ipa, start_ipa,
+					&out_ipa, &out_range, &rmi_ret);
+			if (ret || (rmi_ret != RMI_SUCCESS))
+				break;
+			WARN_ON(undelegate_range_desc(out_range));
+			base_ipa = out_ipa;
+		}
 	}
 
 	return ret;

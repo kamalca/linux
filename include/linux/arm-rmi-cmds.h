@@ -687,6 +687,31 @@ static inline long rmi_rtt_unprot_unmap(unsigned long rd,
 	return ret;
 }
 
+struct rtt_entry {
+	unsigned long walk_level;
+	unsigned long desc;
+	int state;
+	int ripas;
+};
+
+static inline long
+rmi_rtt_read_entry(unsigned long rd, unsigned long ipa, long level,
+		   struct rtt_entry *rtt)
+{
+	struct arm_smccc_1_2_regs regs = {
+		SMC_RMI_RTT_READ_ENTRY, rd, ipa, level
+	};
+
+	arm_smccc_1_2_invoke(&regs, &regs);
+
+	rtt->walk_level = regs.a1;
+	rtt->state = regs.a2 & 0xff;
+	rtt->desc = regs.a3;
+	rtt->ripas = regs.a4 & 0xff;
+
+	return regs.a0;
+}
+
 static inline unsigned long
 rmi_pdev_get_state(unsigned long pdev_phys, enum rmi_pdev_state *state)
 {
