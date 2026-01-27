@@ -654,4 +654,33 @@ struct rmi_pdev_stream_params {
 	};
 };
 
+#define RMI_PSMMU_IRQCFG_IRQ_DISABLED	0x0
+#define RMI_PSMMU_IRQCFG_IRQ_WIRED	0x1
+#define RMI_PSMMU_IRQCFG_IRQ_MSI	0x2
+#define RMI_PSMMU_IRQCFG_MASK		GENMASK(1, 0)
+struct rmi_psmmu_info {
+	union {
+		struct {
+			u64 flags;
+			union {
+				u32 gerror_intr_num;
+				u8 padding1[8];
+			};
+			union {
+				u32 eventq_intr_num;
+				u8 padding2[8];
+			};
+			union {
+				u32 priq_intr_num;
+				u8 padding3[8];
+			};
+			union {
+				u32 cmdq_sync_intr_num;
+				u8 padding4[8];
+			};
+		};
+		u8 padding5[0x1000];
+	};
+};
+
 #endif /* __LINUX_ARM_SMCCC_RMI_H_ */

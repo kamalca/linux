@@ -31,6 +31,9 @@
 #include <linux/string_choices.h>
 #include <kunit/visibility.h>
 #include <uapi/linux/iommufd.h>
+#include <linux/irq.h>
+#include <linux/msi.h>
+#include <asm/rmi_cmds.h>
 
 #include "arm-smmu-v3.h"
 #include "../../dma-iommu.h"
@@ -4660,10 +4663,20 @@ static void arm_smmu_free_msis(void *data)
 
 static void arm_smmu_write_msi_msg(struct msi_desc *desc, struct msi_msg *msg)
 {
+	int max_config_index = GERROR_MSI_INDEX;
 	phys_addr_t doorbell;
 	struct device *dev = msi_desc_to_dev(desc);
 	struct arm_smmu_device *smmu = dev_get_drvdata(dev);
-	phys_addr_t *cfg = arm_smmu_msi_cfg[desc->msi_index];
+	phys_addr_t *cfg;
+
+	if (smmu->features & ARM_SMMU_FEAT_PRI)
+		max_config_index = PRIQ_MSI_INDEX;
+
+	/* Don't try to config for Realm interrupts. */
+	if (desc->msi_index > max_config_index)
+		return;
+
+	cfg = arm_smmu_msi_cfg[desc->msi_index];
 
 	doorbell = (((u64)msg->address_hi) << 32) | msg->address_lo;
 	doorbell &= MSI_CFG0_ADDR_MASK;
@@ -4675,6 +4688,7 @@ static void arm_smmu_write_msi_msg(struct msi_desc *desc, struct msi_msg *msg)
 
 static void arm_smmu_setup_msis(struct arm_smmu_device *smmu)
 {
+	int irq_index;
 	int ret, nvec = ARM_SMMU_MAX_MSIS;
 	struct device *dev = smmu->dev;
 
@@ -4695,6 +4709,13 @@ static void arm_smmu_setup_msis(struct arm_smmu_device *smmu)
 		return;
 	}
 
+	/*
+	 * Request for realm side non secure interrupts too. Should this be condition
+	 * on non-secure gic?
+	 */
+	if (smmu->features & ARM_SMMU_FEAT_RME_MSI)
+		nvec = nvec * 2;
+
 	/* Allocate MSIs for evtq, gerror and priq. Ignore cmdq */
 	ret = platform_device_msi_init_and_alloc_irqs(dev, nvec, arm_smmu_write_msi_msg);
 	if (ret) {
@@ -4704,7 +4725,19 @@ static void arm_smmu_setup_msis(struct arm_smmu_device *smmu)
 
 	smmu->evtq.q.irq = msi_get_virq(dev, EVTQ_MSI_INDEX);
 	smmu->gerr_irq = msi_get_virq(dev, GERROR_MSI_INDEX);
-	smmu->priq.q.irq = msi_get_virq(dev, PRIQ_MSI_INDEX);
+	irq_index = 2;
+	if (smmu->features & ARM_SMMU_FEAT_PRI) {
+		smmu->priq.q.irq = msi_get_virq(dev, PRIQ_MSI_INDEX);
+		irq_index++;
+	}
+
+	if (smmu->features & ARM_SMMU_FEAT_RME_MSI) {
+		smmu->realm_evtq_irq = msi_get_virq(dev, irq_index++);
+		smmu->realm_gerr_irq = msi_get_virq(dev, irq_index++);
+		// fixme, we should check for pri rmm capability
+		if (smmu->features & ARM_SMMU_FEAT_PRI)
+			smmu->realm_pri_irq = msi_get_virq(dev, irq_index++);
+	}
 
 	/* Add callback to free MSIs on teardown */
 	devm_add_action_or_reset(dev, arm_smmu_free_msis, dev);
@@ -4754,6 +4787,9 @@ static void arm_smmu_setup_unique_irqs(struct arm_smmu_device *smmu)
 			dev_warn(smmu->dev, "no priq irq - PRI will be broken\n");
 		}
 	}
+
+	if (smmu->features & ARM_SMMU_FEAT_RME_IRQ)
+		arm_smmu_setup_realm_irqs(smmu);
 }
 
 static int arm_smmu_setup_irqs(struct arm_smmu_device *smmu)
@@ -5144,6 +5180,9 @@ static int arm_smmu_device_hw_probe(struct arm_smmu_device *smmu)
 	/* ASID/VMID sizes */
 	smmu->asid_bits = reg & IDR0_ASID16 ? 16 : 8;
 	smmu->vmid_bits = reg & IDR0_VMID16 ? 16 : 8;
+
+	if (reg & IDR0_RME_IMPL)
+		smmu->features |= ARM_SMMU_FEAT_RME;
 
 	/* IDR1 */
 	reg = readl_relaxed(smmu->base + ARM_SMMU_IDR1);
@@ -5541,6 +5580,7 @@ static int arm_smmu_device_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 	ioaddr = res->start;
+	smmu->base_phys = ioaddr;
 
 	/*
 	 * Don't map the IMPLEMENTATION DEFINED regions, since they may contain
@@ -5581,6 +5621,46 @@ static int arm_smmu_device_probe(struct platform_device *pdev)
 	ret = arm_smmu_device_hw_probe(smmu);
 	if (ret)
 		return ret;
+
+	if (rmm_is_active()) {
+		struct rmi_psmmu_info *psmmu_info;
+
+		psmmu_info = (struct rmi_psmmu_info *)get_zeroed_page(GFP_KERNEL);
+		if (!psmmu_info)
+			goto skip_rmm_config;
+
+		if (rmi_psmmu_info(smmu->base_phys, virt_to_phys(psmmu_info))) {
+			smmu->features &= ~ARM_SMMU_FEAT_RME;
+			free_page((unsigned long)psmmu_info);
+			goto skip_rmm_config;
+		}
+
+		if ((psmmu_info->flags & RMI_PSMMU_IRQCFG_MASK) ==
+		    RMI_PSMMU_IRQCFG_IRQ_DISABLED) {
+			free_page((unsigned long)psmmu_info);
+			goto skip_rmm_config;
+		}
+
+		smmu->features |= ARM_SMMU_FEAT_RME_IRQ;
+
+		if ((psmmu_info->flags & RMI_PSMMU_IRQCFG_MASK) ==
+		    RMI_PSMMU_IRQCFG_IRQ_WIRED) {
+			smmu->realm_gerr_irq = psmmu_info->gerror_intr_num;
+			smmu->realm_evtq_irq = psmmu_info->eventq_intr_num;
+			smmu->realm_pri_irq = psmmu_info->priq_intr_num;
+
+			/* Disable RME FEAT because RMM need cmdq sync interrupt*/
+			if (psmmu_info->cmdq_sync_intr_num)
+				smmu->features &= ~ARM_SMMU_FEAT_RME;
+
+		} else if ((psmmu_info->flags & RMI_PSMMU_IRQCFG_MASK) ==
+			   RMI_PSMMU_IRQCFG_IRQ_MSI) {
+			smmu->features |= ARM_SMMU_FEAT_RME_MSI;
+		}
+
+		free_page((unsigned long)psmmu_info);
+	}
+skip_rmm_config:
 
 	/* Initialise in-memory data structures */
 	ret = arm_smmu_init_structures(smmu);

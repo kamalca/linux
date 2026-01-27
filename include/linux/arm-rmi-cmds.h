@@ -36,6 +36,11 @@ static inline int rmi_undelegate_page(phys_addr_t phys)
 }
 
 bool is_rmi_available(void);
+static inline bool rmm_is_active(void)
+{
+	/* If RMM is active we should atlest find non zero S2SZ field */
+	return rmi_feat_reg(0) != 0;
+}
 
 long rmi_sro_memxfer_execute(struct rmi_sro_state *sro, gfp_t gfp);
 void rmi_sro_free(struct rmi_sro_state *sro);
@@ -762,6 +767,59 @@ rmi_pdev_stream_disconnect(unsigned long pdev1_phys,
 
 	arm_smccc_1_1_invoke(SMC_RMI_PDEV_STREAM_DISCONNECT, pdev1_phys,
 			     pdev2_phys, stream_handle, &res);
+
+	return res.a0;
+}
+
+static inline unsigned long
+rmi_psmmu_info(unsigned long psmmu_phys, unsigned long psmmu_info_phys)
+{
+	struct arm_smccc_res res;
+
+	arm_smccc_1_1_invoke(SMC_RMI_PSMMU_INFO,
+			     psmmu_phys, psmmu_info_phys, &res);
+
+	return res.a0;
+}
+
+struct rmi_psmmu_event_details {
+	u64 flags;
+	u64 event_num;
+	u64 stream_id;
+	u64 fetch_addr;
+	u64 input_addr;
+	u64 syndrome;
+};
+
+static inline unsigned long
+rmi_psmmu_irq_notify(unsigned long psmmu_phys, unsigned long irqs,
+		     struct rmi_psmmu_event_details *event)
+{
+	struct arm_smccc_1_2_regs regs = {
+		.a0 = SMC_RMI_PSMMU_IRQ_NOTIFY,
+		.a1 = psmmu_phys,
+		.a2 = irqs,
+	};
+
+	arm_smccc_1_2_invoke(&regs, &regs);
+
+	event->flags = regs.a1;
+	event->event_num = regs.a2;
+	event->stream_id = regs.a3;
+	event->fetch_addr = regs.a4;
+	event->input_addr = regs.a5;
+	event->syndrome = regs.a6;
+
+	return regs.a0;
+}
+
+static inline unsigned long
+rmi_psmmu_event_consume(unsigned long psmmu_phys, unsigned long irqs)
+{
+	struct arm_smccc_res res;
+
+	arm_smccc_1_1_invoke(SMC_RMI_PSMMU_EVENT_CONSUME,
+			     psmmu_phys, irqs, &res);
 
 	return res.a0;
 }
