@@ -971,6 +971,8 @@ struct arm_smmu_device {
 
 	struct rb_root			streams;
 	struct mutex			streams_mutex;
+
+	bool realm_initialized;
 };
 
 struct arm_smmu_stream {
@@ -1283,6 +1285,8 @@ arm_vsmmu_alloc_domain_nested(struct iommufd_viommu *viommu, u32 flags,
 			      const struct iommu_user_data *user_data);
 int arm_vsmmu_cache_invalidate(struct iommufd_viommu *viommu,
 			       struct iommu_user_data_array *array);
+int arm_realm_smmu_v3_init(struct iommufd_viommu *viommu,
+			   const struct iommu_user_data *user_data);
 #else
 #define arm_smmu_get_viommu_size NULL
 #define arm_smmu_hw_info NULL

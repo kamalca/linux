@@ -683,4 +683,22 @@ struct rmi_psmmu_info {
 	};
 };
 
+#define RMI_PSMMU_FLAG_MSI	BIT(0)
+#define RMI_PSMMU_FLAG_ATS	BIT(1)
+#define RMI_PSMMU_FLAG_PRI	BIT(2)
+struct rmi_psmmu_params {
+	union {
+		struct {
+			u64 flags;
+			u64 grr_addr;
+			u64 grr_data;
+			u64 eventq_addr;
+			u64 eventq_data;
+			u64 priq_addr;
+			u64 priq_data;
+		};
+		u8 padding5[0x1000];
+	};
+};
+
 #endif /* __LINUX_ARM_SMCCC_RMI_H_ */

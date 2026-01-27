@@ -824,4 +824,11 @@ rmi_psmmu_event_consume(unsigned long psmmu_phys, unsigned long irqs)
 	return res.a0;
 }
 
+int rmi_psmmu_activate(unsigned long psmmu_phys,
+		unsigned long psmmu_params_phys, unsigned long *rmi_ret);
+int rmi_psmmu_st_l2_create(unsigned long psmmu_phys,
+		unsigned long stream_id, unsigned long *rmi_ret);
+int rmi_psmmu_st_l2_destroy(unsigned long psmmu_phys,
+		unsigned long stream_id, unsigned long *rmi_ret);
+
 #endif

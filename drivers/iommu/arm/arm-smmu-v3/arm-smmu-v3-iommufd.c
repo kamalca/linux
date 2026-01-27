@@ -455,6 +455,9 @@ size_t arm_smmu_get_viommu_size(struct device *dev,
 	if (viommu_type == IOMMU_VIOMMU_TYPE_ARM_SMMUV3)
 		return VIOMMU_STRUCT_SIZE(struct arm_vsmmu, core);
 
+	if (viommu_type == IOMMU_VIOMMU_TYPE_ARM_REALM_SMMUV3)
+		return VIOMMU_STRUCT_SIZE(struct arm_vsmmu, core);
+
 	if (!smmu->impl_ops || !smmu->impl_ops->get_viommu_size)
 		return 0;
 	return smmu->impl_ops->get_viommu_size(viommu_type);
@@ -481,6 +484,10 @@ int arm_vsmmu_init(struct iommufd_viommu *viommu,
 		viommu->ops = &arm_vsmmu_ops;
 		return 0;
 	}
+
+	if (viommu->type == IOMMU_VIOMMU_TYPE_ARM_REALM_SMMUV3)
+		return arm_realm_smmu_v3_init(viommu, user_data);
+
 
 	return smmu->impl_ops->vsmmu_init(vsmmu, user_data);
 }
