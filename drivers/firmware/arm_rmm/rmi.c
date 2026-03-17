@@ -586,6 +586,17 @@ int rmi_psmmu_activate(unsigned long psmmu_phys,
 	return 0;
 }
 
+int rmi_psmmu_deactivate(unsigned long psmmu_phys, unsigned long *rmi_ret)
+{
+	struct rmi_sro_state *sro __free(kfree) = kmalloc_obj(*sro);
+	if (!sro)
+		return -ENOMEM;
+
+	*rmi_ret = rmi_sro_memxfer_cmd(sro, GFP_KERNEL, SMC_RMI_PSMMU_DEACTIVATE,
+				       psmmu_phys);
+	return 0;
+}
+
 int rmi_psmmu_st_l2_create(unsigned long psmmu_phys,
 		   unsigned long stream_id, unsigned long *rmi_ret)
 {

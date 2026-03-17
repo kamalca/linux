@@ -13,6 +13,7 @@
 #include <linux/iommufd.h>
 #include <linux/kernel.h>
 #include <linux/mmzone.h>
+#include <linux/refcount.h>
 #include <linux/sizes.h>
 
 struct arm_smmu_device;
@@ -972,7 +973,8 @@ struct arm_smmu_device {
 	struct rb_root			streams;
 	struct mutex			streams_mutex;
 
-	bool realm_initialized;
+	struct mutex			realm_mutex;
+	refcount_t			realm_users;
 };
 
 struct arm_smmu_stream {

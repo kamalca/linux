@@ -126,9 +126,25 @@ void arm_smmu_setup_realm_irqs(struct arm_smmu_device *smmu)
 	}
 }
 
+static bool arm_realm_smmu_active(struct arm_smmu_device *smmu)
+{
+	lockdep_assert_held(&smmu->realm_mutex);
+	return refcount_read(&smmu->realm_users) > 0;
+}
+
 static void arm_realm_smmu_v3_destroy(struct iommufd_viommu *viommu)
 {
-	/* When we add refcount psmmu deactivate here. */
+	unsigned long rmi_ret;
+	struct arm_smmu_device *smmu =
+		container_of(viommu->iommu_dev, struct arm_smmu_device, iommu);
+
+	guard(mutex)(&smmu->realm_mutex);
+	if (WARN_ON(!arm_realm_smmu_active(smmu)))
+		return;
+
+	if (refcount_dec_and_test(&smmu->realm_users) &&
+	    (rmi_psmmu_deactivate(smmu->base_phys, &rmi_ret) || rmi_ret))
+		dev_warn(smmu->dev, "failed to deactivate realm pSMMU\n");
 }
 
 static void arm_realm_smmu_v3_vdevice_destroy(struct iommufd_vdevice *vdev)
@@ -142,7 +158,8 @@ static void arm_realm_smmu_v3_vdevice_destroy(struct iommufd_vdevice *vdev)
 	unsigned long rmi_ret = 0;
 	int ret;
 
-	if (!smmu->realm_initialized)
+	guard(mutex)(&smmu->realm_mutex);
+	if (!arm_realm_smmu_active(smmu))
 		return;
 
 	ret = rmi_psmmu_st_l2_destroy(smmu->base_phys,
@@ -170,7 +187,8 @@ static int arm_realm_smmu_v3_vdevice_init(struct iommufd_vdevice *vdev)
 	unsigned long rmi_ret = 0;
 	int ret;
 
-	if (!smmu->realm_initialized)
+	guard(mutex)(&smmu->realm_mutex);
+	if (!arm_realm_smmu_active(smmu))
 		return -EINVAL;
 
 	ret = rmi_psmmu_st_l2_create(smmu->base_phys,
@@ -232,12 +250,17 @@ int arm_realm_smmu_v3_init(struct iommufd_viommu *viommu,
 	if (!(smmu->features & ARM_SMMU_FEAT_RME))
 		return -EOPNOTSUPP;
 
-	if (smmu->realm_initialized)
+	mutex_lock(&smmu->realm_mutex);
+	if (arm_realm_smmu_active(smmu)) {
+		refcount_inc(&smmu->realm_users);
 		goto psmmu_already_active;
+	}
 
 	params = (struct rmi_psmmu_params *)get_zeroed_page(GFP_KERNEL);
-	if (!params)
-		return -ENOMEM;
+	if (!params) {
+		ret = -ENOMEM;
+		goto out_unlock;
+	}
 
 	/* No ATS and PRI support */
 	if (!(smmu->features & ARM_SMMU_FEAT_MSI))
@@ -264,12 +287,14 @@ psmmu_activate:
 		dev_warn(smmu->dev, "failed to activate realm pSMMU\n");
 		ret = -EIO;
 	} else {
-		smmu->realm_initialized = true;
+		refcount_set(&smmu->realm_users, 1);
 	}
 out_free:
 	free_page((unsigned long)params);
 psmmu_already_active:
 	if (!ret)
 		viommu->ops = &arm_realm_smmu_v3_ops;
+out_unlock:
+	mutex_unlock(&smmu->realm_mutex);
 	return ret;
 }
