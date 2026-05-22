@@ -440,6 +440,7 @@ struct nvme_iod {
 
 	size_t total_len;
 	struct dma_iova_state dma_state;
+	unsigned long dma_attrs;
 	void *descriptors[NVME_MAX_NR_DESCRIPTORS];
 	struct nvme_dma_vec *dma_vecs;
 	unsigned int nr_dma_vecs;
@@ -447,6 +448,7 @@ struct nvme_iod {
 	dma_addr_t meta_dma;
 	size_t meta_total_len;
 	struct dma_iova_state meta_dma_state;
+	unsigned long meta_dma_attrs;
 	struct nvme_sgl_desc *meta_descriptor;
 };
 
@@ -865,7 +867,7 @@ static void nvme_free_descriptors(struct request *req)
 	}
 }
 
-static void nvme_free_prps(struct request *req, unsigned int attrs)
+static void nvme_free_prps(struct request *req, unsigned long attrs)
 {
 	struct nvme_iod *iod = blk_mq_rq_to_pdu(req);
 	struct nvme_queue *nvmeq = req->mq_hctx->driver_data;
@@ -878,7 +880,7 @@ static void nvme_free_prps(struct request *req, unsigned int attrs)
 }
 
 static void nvme_free_sgls(struct request *req, struct nvme_sgl_desc *sge,
-		struct nvme_sgl_desc *sg_list, unsigned int attrs)
+		struct nvme_sgl_desc *sg_list, unsigned long attrs)
 {
 	struct nvme_queue *nvmeq = req->mq_hctx->driver_data;
 	enum dma_data_direction dir = rq_dma_dir(req);
@@ -905,7 +907,7 @@ static void nvme_unmap_metadata(struct request *req)
 	struct nvme_iod *iod = blk_mq_rq_to_pdu(req);
 	struct device *dma_dev = nvmeq->dev->dev;
 	struct nvme_sgl_desc *sge = iod->meta_descriptor;
-	unsigned int attrs = 0;
+	unsigned long attrs = 0;
 
 	if (iod->flags & IOD_SINGLE_META_SEGMENT) {
 		dma_unmap_page(dma_dev, iod->meta_dma,
@@ -918,11 +920,11 @@ static void nvme_unmap_metadata(struct request *req)
 		map = PCI_P2PDMA_MAP_BUS_ADDR;
 	else if (iod->flags & IOD_META_MMIO) {
 		map = PCI_P2PDMA_MAP_THRU_HOST_BRIDGE;
-		attrs |= DMA_ATTR_MMIO;
+		attrs = iod->meta_dma_attrs;
 	}
 
 	if (!blk_rq_dma_unmap(req, dma_dev, &iod->meta_dma_state,
-			      iod->meta_total_len, map)) {
+			      iod->meta_total_len, map, attrs)) {
 		if (nvme_pci_cmd_use_meta_sgl(&iod->cmd))
 			nvme_free_sgls(req, sge, &sge[1], attrs);
 		else
@@ -941,7 +943,7 @@ static void nvme_unmap_data(struct request *req)
 	struct nvme_iod *iod = blk_mq_rq_to_pdu(req);
 	struct nvme_queue *nvmeq = req->mq_hctx->driver_data;
 	struct device *dma_dev = nvmeq->dev->dev;
-	unsigned int attrs = 0;
+	unsigned long attrs = 0;
 
 	if (iod->flags & IOD_SINGLE_SEGMENT) {
 		static_assert(offsetof(union nvme_data_ptr, prp1) ==
@@ -955,11 +957,11 @@ static void nvme_unmap_data(struct request *req)
 		map = PCI_P2PDMA_MAP_BUS_ADDR;
 	else if (iod->flags & IOD_DATA_MMIO) {
 		map = PCI_P2PDMA_MAP_THRU_HOST_BRIDGE;
-		attrs |= DMA_ATTR_MMIO;
+		attrs = iod->dma_attrs;
 	}
 
 	if (!blk_rq_dma_unmap(req, dma_dev, &iod->dma_state, iod->total_len,
-			      map)) {
+			      map, attrs)) {
 		if (nvme_pci_cmd_use_sgl(&iod->cmd))
 			nvme_free_sgls(req, &iod->cmd.common.dptr.sgl,
 			               iod->descriptors[0], attrs);
@@ -1276,6 +1278,7 @@ static blk_status_t nvme_map_data(struct request *req)
 		break;
 	case PCI_P2PDMA_MAP_THRU_HOST_BRIDGE:
 		iod->flags |= IOD_DATA_MMIO;
+		iod->dma_attrs = iter.attrs;
 		break;
 	case PCI_P2PDMA_MAP_NONE:
 		break;
@@ -1311,6 +1314,7 @@ static blk_status_t nvme_pci_setup_meta_iter(struct request *req)
 		break;
 	case PCI_P2PDMA_MAP_THRU_HOST_BRIDGE:
 		iod->flags |= IOD_META_MMIO;
+		iod->meta_dma_attrs = iter.attrs;
 		break;
 	case PCI_P2PDMA_MAP_NONE:
 		break;
@@ -1411,6 +1415,8 @@ static blk_status_t nvme_prep_rq(struct request *req)
 	iod->nr_descriptors = 0;
 	iod->total_len = 0;
 	iod->meta_total_len = 0;
+	iod->dma_attrs = 0;
+	iod->meta_dma_attrs = 0;
 	iod->nr_dma_vecs = 0;
 
 	ret = nvme_setup_cmd(req->q->queuedata, req);

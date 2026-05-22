@@ -865,6 +865,11 @@ int hmm_dma_map_alloc(struct device *dev, struct hmm_dma_map *map,
 	if (!map->pfn_list)
 		return -ENOMEM;
 
+	map->dma_attrs = kvcalloc(nr_entries, sizeof(*map->dma_attrs),
+				  GFP_KERNEL | __GFP_NOWARN);
+	if (!map->dma_attrs)
+		goto err_attrs;
+
 	use_iova = dma_iova_try_alloc(dev, &map->state, 0,
 			nr_entries * PAGE_SIZE);
 	if (!use_iova && dma_need_unmap(dev)) {
@@ -876,6 +881,8 @@ int hmm_dma_map_alloc(struct device *dev, struct hmm_dma_map *map,
 	return 0;
 
 err_dma:
+	kvfree(map->dma_attrs);
+err_attrs:
 	kvfree(map->pfn_list);
 	return -ENOMEM;
 }
@@ -894,6 +901,7 @@ void hmm_dma_map_free(struct device *dev, struct hmm_dma_map *map)
 		dma_iova_free(dev, &map->state);
 	kvfree(map->pfn_list);
 	kvfree(map->dma_list);
+	kvfree(map->dma_attrs);
 }
 EXPORT_SYMBOL_GPL(hmm_dma_map_free);
 
@@ -956,11 +964,12 @@ dma_addr_t hmm_dma_map_pfn(struct device *dev, struct hmm_dma_map *map,
 	case PCI_P2PDMA_MAP_NONE:
 		break;
 	case PCI_P2PDMA_MAP_THRU_HOST_BRIDGE:
-		attrs |= DMA_ATTR_MMIO;
+		attrs |= p2pdma_state->mem->dma_mapping_flags;
 		pfns[idx] |= HMM_PFN_P2PDMA;
 		break;
 	case PCI_P2PDMA_MAP_BUS_ADDR:
 		pfns[idx] |= HMM_PFN_P2PDMA_BUS | HMM_PFN_DMA_MAPPED;
+		map->dma_attrs[idx] = 0;
 		return pci_p2pdma_bus_addr_map(p2pdma_state->mem, paddr);
 	default:
 		return DMA_MAPPING_ERROR;
@@ -993,10 +1002,12 @@ dma_addr_t hmm_dma_map_pfn(struct device *dev, struct hmm_dma_map *map,
 		if (dma_need_unmap(dev))
 			dma_addrs[idx] = dma_addr;
 	}
+	map->dma_attrs[idx] = attrs;
 	pfns[idx] |= HMM_PFN_DMA_MAPPED;
 	return dma_addr;
 error:
 	pfns[idx] &= ~HMM_PFN_P2PDMA;
+	map->dma_attrs[idx] = 0;
 	return DMA_MAPPING_ERROR;
 
 }
@@ -1016,13 +1027,10 @@ bool hmm_dma_unmap_pfn(struct device *dev, struct hmm_dma_map *map, size_t idx)
 	struct dma_iova_state *state = &map->state;
 	dma_addr_t *dma_addrs = map->dma_list;
 	unsigned long *pfns = map->pfn_list;
-	unsigned long attrs = DMA_ATTR_REQUIRE_COHERENT;
+	unsigned long attrs = DMA_ATTR_REQUIRE_COHERENT | map->dma_attrs[idx];
 
 	if ((pfns[idx] & valid_dma) != valid_dma)
 		return false;
-
-	if (pfns[idx] & HMM_PFN_P2PDMA)
-		attrs |= DMA_ATTR_MMIO;
 
 	if (pfns[idx] & HMM_PFN_P2PDMA_BUS)
 		; /* no need to unmap bus address P2P mappings */
@@ -1035,6 +1043,7 @@ bool hmm_dma_unmap_pfn(struct device *dev, struct hmm_dma_map *map, size_t idx)
 
 	pfns[idx] &=
 		~(HMM_PFN_DMA_MAPPED | HMM_PFN_P2PDMA | HMM_PFN_P2PDMA_BUS);
+	map->dma_attrs[idx] = 0;
 	return true;
 }
 EXPORT_SYMBOL_GPL(hmm_dma_unmap_pfn);

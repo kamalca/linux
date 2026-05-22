@@ -87,10 +87,11 @@ static bool blk_dma_map_bus(struct blk_dma_iter *iter, struct phys_vec *vec)
 static bool blk_dma_map_direct(struct request *req, struct device *dma_dev,
 		struct blk_dma_iter *iter, struct phys_vec *vec)
 {
-	unsigned int attrs = 0;
+	unsigned long attrs = 0;
 
 	if (iter->p2pdma.map == PCI_P2PDMA_MAP_THRU_HOST_BRIDGE)
-		attrs |= DMA_ATTR_MMIO;
+		attrs |= iter->p2pdma.mem->dma_mapping_flags;
+	iter->attrs = attrs;
 
 	iter->addr = dma_map_phys(dma_dev, vec->paddr, vec->len,
 			rq_dma_dir(req), attrs);
@@ -107,7 +108,7 @@ static bool blk_rq_dma_map_iova(struct request *req, struct device *dma_dev,
 		struct phys_vec *vec)
 {
 	enum dma_data_direction dir = rq_dma_dir(req);
-	unsigned int attrs = 0;
+	unsigned long attrs = 0;
 	size_t mapped = 0;
 	int error;
 
@@ -115,7 +116,8 @@ static bool blk_rq_dma_map_iova(struct request *req, struct device *dma_dev,
 	iter->len = dma_iova_size(state);
 
 	if (iter->p2pdma.map == PCI_P2PDMA_MAP_THRU_HOST_BRIDGE)
-		attrs |= DMA_ATTR_MMIO;
+		attrs |= iter->p2pdma.mem->dma_mapping_flags;
+	iter->attrs = attrs;
 
 	do {
 		error = dma_iova_link(dma_dev, state, vec->paddr, mapped,
@@ -168,6 +170,7 @@ static bool blk_dma_map_iter_start(struct request *req, struct device *dma_dev,
 	struct phys_vec vec;
 
 	memset(&iter->p2pdma, 0, sizeof(iter->p2pdma));
+	iter->attrs = 0;
 	iter->status = BLK_STS_OK;
 	iter->p2pdma.map = PCI_P2PDMA_MAP_NONE;
 

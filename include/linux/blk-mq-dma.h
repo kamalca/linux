@@ -16,6 +16,7 @@ struct blk_dma_iter {
 	/* Output address range for this iteration */
 	dma_addr_t			addr;
 	u32				len;
+	unsigned long			attrs;
 	struct pci_p2pdma_map_state	p2pdma;
 
 	/* Status code. Only valid when blk_rq_dma_map_iter_* returned false */
@@ -49,23 +50,19 @@ static inline bool blk_rq_dma_map_coalesce(struct dma_iova_state *state)
  * @state:	DMA IOVA state
  * @mapped_len: number of bytes to unmap
  * @map:	peer-to-peer mapping type
+ * @attrs:	DMA attributes used for the mapping
  *
  * Returns %false if the callers need to manually unmap every DMA segment
  * mapped using @iter or %true if no work is left to be done.
  */
 static inline bool blk_rq_dma_unmap(struct request *req, struct device *dma_dev,
 		struct dma_iova_state *state, size_t mapped_len,
-		enum pci_p2pdma_map_type map)
+		enum pci_p2pdma_map_type map, unsigned long attrs)
 {
 	if (map == PCI_P2PDMA_MAP_BUS_ADDR)
 		return true;
 
 	if (dma_use_iova(state)) {
-		unsigned int attrs = 0;
-
-		if (map == PCI_P2PDMA_MAP_THRU_HOST_BRIDGE)
-			attrs |= DMA_ATTR_MMIO;
-
 		dma_iova_destroy(dma_dev, state, mapped_len, rq_dma_dir(req),
 				 attrs);
 		return true;

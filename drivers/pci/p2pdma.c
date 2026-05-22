@@ -285,6 +285,11 @@ int pcim_p2pdma_init(struct pci_dev *pdev)
 			continue;
 
 		p2p->mem[i].owner = &pdev->dev;
+
+		p2p->mem[i].dma_mapping_flags = DMA_ATTR_MMIO;
+		if (force_dma_unencrypted(dev))
+			p2p->mem[i].dma_mapping_flags |= DMA_ATTR_CC_SHARED;
+
 		p2p->mem[i].bus_offset =
 			pci_bus_address(pdev, i) - pci_resource_start(pdev, i);
 	}

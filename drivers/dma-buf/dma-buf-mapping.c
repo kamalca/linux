@@ -59,11 +59,13 @@ static unsigned int calc_sg_nents(struct dma_iova_state *state,
  * @sgt:    Scatter-gather table
  * @state:  DMA IOVA state relevant in IOMMU-based DMA
  * @size:   Total size of DMA transfer
+ * @attrs:  DMA attributes used for host bridge mappings
  */
 struct dma_buf_dma {
 	struct sg_table sgt;
 	struct dma_iova_state *state;
 	size_t size;
+	unsigned long attrs;
 };
 
 /**
@@ -119,6 +121,7 @@ struct sg_table *dma_buf_phys_vec_to_sgt(struct dma_buf_attachment *attach,
 		 */
 		break;
 	case PCI_P2PDMA_MAP_THRU_HOST_BRIDGE:
+		dma->attrs = provider->dma_mapping_flags;
 		dma->state = kzalloc_obj(*dma->state);
 		if (!dma->state) {
 			ret = -ENOMEM;
@@ -147,7 +150,7 @@ struct sg_table *dma_buf_phys_vec_to_sgt(struct dma_buf_attachment *attach,
 			ret = dma_iova_link(attach->dev, dma->state,
 					    phys_vec[i].paddr, 0,
 					    phys_vec[i].len, dir,
-					    DMA_ATTR_MMIO);
+					    dma->attrs);
 			if (ret)
 				goto err_unmap_dma;
 
@@ -155,7 +158,7 @@ struct sg_table *dma_buf_phys_vec_to_sgt(struct dma_buf_attachment *attach,
 		} else {
 			addr = dma_map_phys(attach->dev, phys_vec[i].paddr,
 					    phys_vec[i].len, dir,
-					    DMA_ATTR_MMIO);
+					    dma->attrs);
 			ret = dma_mapping_error(attach->dev, addr);
 			if (ret)
 				goto err_unmap_dma;
@@ -195,11 +198,11 @@ err_unmap_dma:
 		; /* Do nothing */
 	} else if (dma_use_iova(dma->state)) {
 		dma_iova_destroy(attach->dev, dma->state, mapped_len, dir,
-				 DMA_ATTR_MMIO);
+				 dma->attrs);
 	} else {
 		for_each_sgtable_dma_sg(&dma->sgt, sgl, i)
 			dma_unmap_phys(attach->dev, sg_dma_address(sgl),
-				       sg_dma_len(sgl), dir, DMA_ATTR_MMIO);
+				       sg_dma_len(sgl), dir, dma->attrs);
 	}
 	sg_free_table(&dma->sgt);
 err_free_state:
@@ -231,13 +234,13 @@ void dma_buf_free_sgt(struct dma_buf_attachment *attach, struct sg_table *sgt,
 		; /* Do nothing */
 	} else if (dma_use_iova(dma->state)) {
 		dma_iova_destroy(attach->dev, dma->state, dma->size, dir,
-				 DMA_ATTR_MMIO);
+				 dma->attrs);
 	} else {
 		struct scatterlist *sgl;
 
 		for_each_sgtable_dma_sg(sgt, sgl, i)
 			dma_unmap_phys(attach->dev, sg_dma_address(sgl),
-				       sg_dma_len(sgl), dir, DMA_ATTR_MMIO);
+				       sg_dma_len(sgl), dir, dma->attrs);
 	}
 
 	sg_free_table(sgt);
