@@ -213,7 +213,7 @@ static int cca_devsec_tsm_register(struct arm_smccc_device *sdev)
 }
 #endif /* CONFIG_PCI_TSM */
 
-static int cca_tsm_probe(struct arm_smccc_device *sdev)
+static int cca_devsec_tsm_probe(struct arm_smccc_device *sdev)
 {
 	int ret;
 
@@ -240,19 +240,19 @@ static void cca_tsm_remove(struct arm_smccc_device *sdev)
 	tsm_report_unregister(&arm_cca_tsm_report_ops);
 }
 
-static const struct arm_smccc_device_id cca_tsm_id_table[] = {
+static const struct arm_smccc_device_id cca_devsec_tsm_id_table[] = {
 	{ .func_id = SMC_RSI_ABI_VERSION },
 	{}
 };
-MODULE_DEVICE_TABLE(arm_smccc, cca_tsm_id_table);
+MODULE_DEVICE_TABLE(arm_smccc, cca_devsec_tsm_id_table);
 
-static struct arm_smccc_driver cca_tsm_driver = {
+static struct arm_smccc_driver cca_devsec_tsm_driver = {
 	.name = KBUILD_MODNAME,
-	.probe = cca_tsm_probe,
+	.probe = cca_devsec_tsm_probe,
 	.remove = cca_tsm_remove,
-	.id_table = cca_tsm_id_table,
+	.id_table = cca_devsec_tsm_id_table,
 };
-module_arm_smccc_driver(cca_tsm_driver);
+module_arm_smccc_driver(cca_devsec_tsm_driver);
 MODULE_AUTHOR("Sami Mujawar <sami.mujawar@arm.com>");
 MODULE_AUTHOR("Aneesh Kumar <aneesh.kumar@kernel.org>");
 MODULE_DESCRIPTION("Arm CCA Guest TSM Driver");
