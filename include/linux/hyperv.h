@@ -781,6 +781,18 @@ struct vmbus_gpadl {
 	u32 gpadl_handle;
 	u32 size;
 	void *buffer;
+	/*
+	 * True if the vmbus layer owns the encryption lifecycle of @buffer:
+	 * it called set_memory_decrypted() at establish time and
+	 * vmbus_teardown_gpadl() will call set_memory_encrypted() at teardown.
+	 * If re-encryption at teardown fails, this flag remains true to signal
+	 * to the caller that @buffer is in an unknown state and must be
+	 * leaked rather than returned to the page allocator.
+	 *
+	 * False if the caller owns the encryption lifecycle (see
+	 * vmbus_establish_gpadl_caller_decrypted()), or if @buffer has been
+	 * successfully re-encrypted and is safe for the caller to free.
+	 */
 	bool decrypted;
 };
 
@@ -1204,6 +1216,11 @@ extern int vmbus_establish_gpadl(struct vmbus_channel *channel,
 				      void *kbuffer,
 				      u32 size,
 				      struct vmbus_gpadl *gpadl);
+
+extern int vmbus_establish_gpadl_caller_decrypted(struct vmbus_channel *channel,
+						  void *kbuffer,
+						  u32 size,
+						  struct vmbus_gpadl *gpadl);
 
 extern int vmbus_teardown_gpadl(struct vmbus_channel *channel,
 				     struct vmbus_gpadl *gpadl);
