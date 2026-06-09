@@ -1147,6 +1147,20 @@ struct netvsc_channel {
 	struct netvsc_stats_rx rx_stats;
 };
 
+/* A physically-contiguous chunk of a kmalloc+vmap netvsc buffer.
+ *
+ * netvsc allocates its large send/receive buffers as a list of contiguous
+ * page-order chunks (largest first, with graceful fallback to smaller
+ * orders), transitions each chunk to host-visible via set_memory_decrypted(),
+ * and then vmap()s them together to form a single virtually-contiguous
+ * buffer.  The chunk list is preserved for the life of the buffer so each
+ * chunk can be individually re-encrypted and freed at teardown.
+ */
+struct netvsc_buf_chunk {
+	struct page *page;
+	unsigned int order;
+};
+
 /* Per netvsc device */
 struct netvsc_device {
 	u32 nvsp_version;
@@ -1158,6 +1172,8 @@ struct netvsc_device {
 	/* Receive buffer allocated by us but manages by NetVSP */
 	void *recv_buf;
 	u32 recv_buf_size; /* allocated bytes */
+	struct netvsc_buf_chunk *recv_buf_chunks;
+	u32 recv_buf_chunk_cnt;
 	struct vmbus_gpadl recv_buf_gpadl_handle;
 	u32 recv_section_cnt;
 	u32 recv_section_size;
@@ -1166,6 +1182,8 @@ struct netvsc_device {
 	/* Send buffer allocated by us */
 	void *send_buf;
 	u32 send_buf_size;
+	struct netvsc_buf_chunk *send_buf_chunks;
+	u32 send_buf_chunk_cnt;
 	struct vmbus_gpadl send_buf_gpadl_handle;
 	u32 send_section_cnt;
 	u32 send_section_size;
@@ -1193,7 +1211,7 @@ struct netvsc_device {
 
 	struct netvsc_channel chan_table[VRSS_CHANNEL_MAX];
 
-	struct rcu_head rcu;
+	struct rcu_work rwork;
 };
 
 /* NdisInitialize message */
