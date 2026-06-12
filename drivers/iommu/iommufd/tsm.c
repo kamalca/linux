@@ -82,6 +82,10 @@ static bool iommufd_vdevice_tsm_req_op_valid(u32 op, u32 tvm_arch)
 	case TSM_REQ_SEV_ENABLE_DMA:
 	case TSM_REQ_SEV_DISABLE_DMA:
 		return tvm_arch == IOMMU_VDEVICE_TSM_TVM_ARCH_SEV;
+	case TSM_REQ_READ_OBJECT:
+	case TSM_REQ_REGEN_OBJECT:
+	case TSM_REQ_OBJECT_INFO:
+		return true;
 	default:
 		return false;
 	}

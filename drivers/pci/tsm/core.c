@@ -446,6 +446,9 @@ ssize_t pci_tsm_guest_req(struct pci_dev *pdev,
 	switch (op) {
 	case TSM_REQ_VALIDATE_MMIO:
 	case TSM_REQ_SET_TDI_STATE:
+	case TSM_REQ_READ_OBJECT:
+	case TSM_REQ_REGEN_OBJECT:
+	case TSM_REQ_OBJECT_INFO:
 		break;
 	case TSM_REQ_SEV_ENABLE_DMA:
 	case TSM_REQ_SEV_DISABLE_DMA:

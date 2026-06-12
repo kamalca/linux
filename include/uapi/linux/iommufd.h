@@ -1436,12 +1436,18 @@ enum iommu_vdevice_tsm_guest_tvm_arch {
  * @TSM_REQ_SET_TDI_STATE: Set TDI state
  * @TSM_REQ_SEV_ENABLE_DMA: Enable SEV DMA
  * @TSM_REQ_SEV_DISABLE_DMA: Disable SEV DMA
+ * @TSM_REQ_READ_OBJECT: Read a TSM object
+ * @TSM_REQ_REGEN_OBJECT: Regenerate a TSM object
+ * @TSM_REQ_OBJECT_INFO: Read TSM object information
  */
 enum iommu_vdevice_tsm_guest_req_op {
 	TSM_REQ_VALIDATE_MMIO = 1,
 	TSM_REQ_SET_TDI_STATE,
 	TSM_REQ_SEV_ENABLE_DMA,
 	TSM_REQ_SEV_DISABLE_DMA,
+	TSM_REQ_READ_OBJECT,
+	TSM_REQ_REGEN_OBJECT,
+	TSM_REQ_OBJECT_INFO,
 };
 
 /**
