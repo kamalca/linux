@@ -470,6 +470,25 @@ static void cca_tsm_unbind(struct pci_tdi *tdi)
 	kfree(host_tdi);
 }
 
+static ssize_t cca_tsm_guest_req(struct pci_tdi *tdi,
+		enum iommu_vdevice_tsm_guest_req_op req_op,
+		enum iommu_vdevice_tsm_guest_tvm_arch tvm_arch,
+		sockptr_t req, size_t req_len, sockptr_t resp,
+		size_t resp_len, u64 *tsm_code)
+{
+	/*
+	 * reject the guest request if VMM was using the link tsm wrongly.
+	 * The guest was using a wrong CC archiecture with this link tsm
+	 */
+	if (tvm_arch != IOMMU_VDEVICE_TSM_TVM_ARCH_CCA)
+		return -EINVAL;
+
+	if (req.is_kernel || resp.is_kernel)
+		return -EINVAL;
+
+		return -EINVAL;
+}
+
 static struct pci_tsm_ops cca_link_pci_ops = {
 	.probe = cca_tsm_pci_probe,
 	.remove = cca_tsm_pci_remove,
@@ -477,6 +496,7 @@ static struct pci_tsm_ops cca_link_pci_ops = {
 	.disconnect = cca_tsm_disconnect,
 	.bind = cca_tsm_bind,
 	.unbind = cca_tsm_unbind,
+	.guest_req = cca_tsm_guest_req,
 };
 
 static void cca_link_tsm_remove(void *tsm_dev)
