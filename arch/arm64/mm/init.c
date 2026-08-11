@@ -345,6 +345,7 @@ void __init arch_mm_preinit(void)
 	bool cc_guest = is_realm_world();
 
 	if (cc_guest) {
+		flags |= SWIOTLB_ANY;
 		swiotlb_mark_default_cc_shared();
 	} else if (!limited_addressing) {
 		/*
