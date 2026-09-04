@@ -65,6 +65,17 @@ static inline int rmi_rmm_config_set(unsigned long cfg_ptr)
 }
 
 /**
+ * rmi_rmm_activate() - Activate the RMM
+ * @sro: Preallocated SRO context to be used
+ *
+ * Return: 0 on success, positive RMI result code or negative Linux error code
+ */
+static inline long rmi_rmm_activate(struct rmi_sro_state *sro)
+{
+	return rmi_sro_memxfer_cmd(sro, GFP_KERNEL, SMC_RMI_RMM_ACTIVATE);
+}
+
+/**
  * rmi_features() - Read feature register
  * @index: Feature register index
  * @out: Feature register value is written to this pointer
