@@ -35,6 +35,8 @@ static inline int rmi_undelegate_page(phys_addr_t phys)
 	return rmi_undelegate_range(phys, PAGE_SIZE);
 }
 
+bool is_rmi_available(void);
+
 long rmi_sro_memxfer_execute(struct rmi_sro_state *sro, gfp_t gfp);
 void rmi_sro_free(struct rmi_sro_state *sro);
 long rmi_sro_execute(struct arm_smccc_1_2_regs *regs);
@@ -65,6 +67,19 @@ static inline int rmi_rmm_config_set(unsigned long cfg_ptr)
 }
 
 /**
+ * rmi_rmm_deactivate() - Deactivate the RMM and reclaim any memory donated at
+ * rmi_rmm_activate()
+ *
+ * @sro: Preallocated SRO context to be used
+ *
+ * Return: 0 on success, positive RMI result code or negative Linux error code
+ */
+static inline long rmi_rmm_deactivate(struct rmi_sro_state *sro)
+{
+	return rmi_sro_memxfer_cmd(sro, GFP_KERNEL, SMC_RMI_RMM_DEACTIVATE);
+}
+
+/**
  * rmi_rmm_activate() - Activate the RMM
  * @sro: Preallocated SRO context to be used
  *
@@ -73,6 +88,66 @@ static inline int rmi_rmm_config_set(unsigned long cfg_ptr)
 static inline long rmi_rmm_activate(struct rmi_sro_state *sro)
 {
 	return rmi_sro_memxfer_cmd(sro, GFP_KERNEL, SMC_RMI_RMM_ACTIVATE);
+}
+
+/**
+ * rmi_granule_tracking_get() - Get configuration of a Granule tracking region
+ * @start: Base PA of the tracking region
+ * @end: End of the PA region
+ * @out_category: Memory category
+ * @out_state: Tracking region state
+ * @out_top: Top of the memory region
+ *
+ * Return: RMI return code
+ */
+static inline int rmi_granule_tracking_get(unsigned long start,
+					   unsigned long end,
+					   unsigned long *out_category,
+					   unsigned long *out_state,
+					   unsigned long *out_top)
+{
+	struct arm_smccc_res res;
+
+	arm_smccc_1_1_invoke(SMC_RMI_GRANULE_TRACKING_GET, start, end, &res);
+
+	if (res.a0 == RMI_SUCCESS) {
+		if (out_category)
+			*out_category = res.a1;
+		if (out_state)
+			*out_state = res.a2;
+		if (out_top)
+			*out_top = res.a3;
+	}
+
+	return res.a0;
+}
+
+/*
+ * rmi_gpt_info - Query the GPT info for the given PAR.
+ * @base: Base of the physical address region
+ * @top: Top of the physical address region
+ * @out_top: Top of the phyiscal address region for which
+ *		the GPT @out_gpt_par_state is valid
+ * @out_gpt_par_state: State of the GPT covered by [base, out_top)
+ */
+static inline long rmi_gpt_info(unsigned long base, unsigned long end,
+			       unsigned long *out_top,
+			       unsigned long *out_gpt_par_state)
+{
+	struct arm_smccc_1_2_regs regs = {
+		SMC_RMI_GPT_INFO, base, end,
+	};
+
+	long ret = rmi_sro_execute(&regs);
+
+	if (ret == RMI_SUCCESS) {
+		if (out_top)
+			*out_top = regs.a1;
+		if (out_gpt_par_state)
+			*out_gpt_par_state = regs.a2;
+	}
+
+	return ret;
 }
 
 /**
