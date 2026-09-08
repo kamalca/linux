@@ -1016,14 +1016,10 @@ static void nvme_unmap_iter(struct request *req, struct blk_dma_iter *iter,
 	struct nvme_queue *nvmeq = req->mq_hctx->driver_data;
 	struct device *dev = nvmeq->dev->dev;
 
-	if (!blk_rq_dma_unmap(req, dev, state, iter->len, iter->p2pdma.map)) {
-		unsigned int attrs = 0;
-
-		if (iter->p2pdma.map == PCI_P2PDMA_MAP_THRU_HOST_BRIDGE)
-			attrs |= DMA_ATTR_MMIO;
-
+	if (!blk_rq_dma_unmap(req, dev, state, iter->len, iter->p2pdma.map,
+			      iter->attrs)) {
 		dma_unmap_phys(dev, iter->addr, iter->len, rq_dma_dir(req),
-			       attrs);
+			       iter->attrs);
 	}
 }
 
