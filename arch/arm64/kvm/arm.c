@@ -247,8 +247,15 @@ static int kvm_arm_default_max_vcpus(void)
 static int kvm_init_vm_flavor(struct kvm *kvm, unsigned long type)
 {
 	bool protected = type & KVM_VM_TYPE_ARM_PROTECTED;
+	bool realm = type & KVM_VM_TYPE_ARM_REALM;
 
-	if (is_protected_kvm_enabled()) {
+	if (protected && realm) {
+		return -EINVAL;
+	} else if (realm) {
+		if (!static_branch_unlikely(&kvm_rmi_is_available))
+			return -EINVAL;
+		kvm->arch.vm_flavor = VM_REALM;
+	} else if (is_protected_kvm_enabled()) {
 		if (protected)
 			kvm->arch.vm_flavor = VM_PROTECTED_PKVM;
 		else
