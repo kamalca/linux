@@ -625,7 +625,7 @@ static int cca_link_tsm_probe(struct arm_smccc_device *sdev)
 }
 
 static const struct arm_smccc_device_id cca_link_tsm_id_table[] = {
-	{ .name = RMI_DEV_NAME },
+	{ .func_id = SMC_RMI_VERSION },
 	{}
 };
 MODULE_DEVICE_TABLE(arm_smccc, cca_link_tsm_id_table);

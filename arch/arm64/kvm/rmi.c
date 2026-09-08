@@ -1518,12 +1518,10 @@ int realm_dev_mem_map(struct kvm *kvm, unsigned long pdev_phys,
 
 	kvm_mmu_free_memory_cache(&cache);
 
-	if (!ret) {
-		/* fold rtts if we can */
-		for (start_ipa = ALIGN(base_ipa, RMM_L2_BLOCK_SIZE);
-		     ((start_ipa + RMM_L2_BLOCK_SIZE) < end_ipa); start_ipa += RMM_L2_BLOCK_SIZE)
-			fold_rtt(&kvm->arch.realm, start_ipa, RMM_RTT_BLOCK_LEVEL);
-	} else {
+	if (!ret)
+		realm_fold_rtt_level(realm, get_start_level(realm) + 1,
+				     base_ipa, end_ipa);
+	else {
 		/* unmap the partial mapping. [base_ipa, start_ipa) */
 		while (start_ipa > base_ipa) {
 			unsigned long out_ipa;

@@ -33,7 +33,7 @@
 #include <uapi/linux/iommufd.h>
 #include <linux/irq.h>
 #include <linux/msi.h>
-#include <asm/rmi_cmds.h>
+#include <linux/arm-rmi-cmds.h>
 
 #include "arm-smmu-v3.h"
 #include "../../dma-iommu.h"

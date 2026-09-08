@@ -244,7 +244,7 @@ int arm_realm_smmu_v3_init(struct iommufd_viommu *viommu,
 		return -EINVAL;
 
 	kvm = viommu->kvm_file->private_data;
-	if (!kvm_is_realm(kvm))
+	if (!kvm_vm_is_realm(kvm))
 		return -EINVAL;
 
 	if (!(smmu->features & ARM_SMMU_FEAT_RME))

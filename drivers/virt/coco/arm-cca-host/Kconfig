@@ -6,7 +6,7 @@ config ARM_CCA_HOST
 	tristate "Arm CCA Host driver"
 	depends on ARM64
 	depends on PCI
-	depends on ARM_RMM
+	depends on ARM_RMM_RMI
 	depends on HAVE_ARM_SMCCC_DISCOVERY
 	select PCI_TSM
 	select KEYS

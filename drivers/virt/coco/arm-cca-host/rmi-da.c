@@ -8,7 +8,6 @@
 #include <linux/pci-ecam.h>
 #include <linux/pci-doe.h>
 #include <linux/delay.h>
-#include <asm/rmi_cmds.h>
 #include <crypto/internal/rsa.h>
 #include <keys/asymmetric-type.h>
 #include <keys/x509-parser.h>

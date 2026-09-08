@@ -261,7 +261,8 @@ static void devsec_link_tsm_unbind(struct pci_tdi *tdi)
 }
 
 static ssize_t devsec_link_tsm_guest_req(struct pci_tdi *tdi,
-					 enum pci_tsm_req_scope scope,
+					 enum iommu_vdevice_tsm_guest_req_op op,
+					 enum iommu_vdevice_tsm_guest_tvm_arch tvm_arch,
 					 sockptr_t req_in, size_t in_len,
 					 sockptr_t req_out, size_t out_len,
 					 u64 *tsm_code)
@@ -380,9 +381,10 @@ static ssize_t tsm_request_store(struct device *dev,
 	if (!host || host != &devsec_link_tsm->dev)
 		return -ENXIO;
 
-	rc = pci_tsm_guest_req(pdev, PCI_TSM_REQ_INFO, KERNEL_SOCKPTR(buf),
-			       count, KERNEL_SOCKPTR(req_out), out_len,
-			       &tsm_code);
+	rc = pci_tsm_guest_req(pdev, TSM_REQ_OBJECT_INFO,
+			       IOMMU_VDEVICE_TSM_TVM_ARCH_CCA,
+			       KERNEL_SOCKPTR(buf), count,
+			       KERNEL_SOCKPTR(req_out), out_len, &tsm_code);
 	if (rc)
 		return rc;
 

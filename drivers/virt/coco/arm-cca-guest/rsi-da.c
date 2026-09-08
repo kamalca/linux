@@ -5,7 +5,7 @@
 
 #include <linux/pci.h>
 #include <linux/mem_encrypt.h>
-#include <asm/rsi_cmds.h>
+#include <linux/arm-rsi-cmds.h>
 #include <crypto/hash.h>
 
 #include "rsi-da.h"

@@ -8,6 +8,7 @@
 
 #include <linux/arm-smccc-rmi.h>
 #include <linux/bug.h>
+#include <linux/gfp.h>
 #include <linux/types.h>
 #include <linux/bitfield.h>
 

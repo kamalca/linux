@@ -6558,7 +6558,7 @@ memslot address space.  If the vCPU most recently ran a nested guest, KVM
 still targets the VM's canonical stage-2, and does not interpret `gpa` as
 a nested guest IPA or target the nested/shadow stage-2 selected by the
 vCPU's last run state.
- 
+
 In the case of confidential VM types where there is an initial set up of
 private guest memory before the guest is 'finalized'/measured, this ioctl
 should only be issued after completing all the necessary setup to put the
