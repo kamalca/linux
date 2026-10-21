@@ -737,7 +737,7 @@ static const struct hv_vmbus_device_id *hv_vmbus_get_id(const struct hv_driver *
  */
 static int vmbus_add_dynid(struct hv_driver *drv, guid_t *guid)
 {
-	struct vmbus_dynid *dynid;
+	struct vmbus_dynid *dynid, *existing;
 
 	dynid = kzalloc_obj(*dynid);
 	if (!dynid)
@@ -745,9 +745,16 @@ static int vmbus_add_dynid(struct hv_driver *drv, guid_t *guid)
 
 	dynid->id.guid = *guid;
 
-	spin_lock(&drv->dynids.lock);
-	list_add_tail(&dynid->node, &drv->dynids.list);
-	spin_unlock(&drv->dynids.lock);
+	scoped_guard(spinlock, &drv->dynids.lock) {
+		list_for_each_entry(existing, &drv->dynids.list, node) {
+			if (guid_equal(&existing->id.guid, guid)) {
+				kfree(dynid);
+				return -EEXIST;
+			}
+		}
+
+		list_add_tail(&dynid->node, &drv->dynids.list);
+	}
 
 	return driver_attach(&drv->driver);
 }
@@ -779,9 +786,6 @@ static ssize_t new_id_store(struct device_driver *driver, const char *buf,
 	retval = guid_parse(buf, &guid);
 	if (retval)
 		return retval;
-
-	if (hv_vmbus_dynid_match(drv, &guid))
-		return -EEXIST;
 
 	retval = vmbus_add_dynid(drv, &guid);
 	if (retval)
