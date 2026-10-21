@@ -1264,6 +1264,7 @@ struct hv_driver {
 		struct list_head list;
 	} dynids;
 
+	/* The device ID pointer is only valid during the probe callback. */
 	int (*probe)(struct hv_device *, const struct hv_vmbus_device_id *);
 	void (*remove)(struct hv_device *dev);
 	void (*shutdown)(struct hv_device *);

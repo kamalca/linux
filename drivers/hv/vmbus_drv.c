@@ -661,21 +661,21 @@ hv_vmbus_dev_match(const struct hv_vmbus_device_id *id, const guid_t *guid)
 }
 
 static const struct hv_vmbus_device_id *
-hv_vmbus_dynid_match(struct hv_driver *drv, const guid_t *guid)
+hv_vmbus_dynid_match(struct hv_driver *drv, const guid_t *guid,
+		     struct hv_vmbus_device_id *id_copy)
 {
-	const struct hv_vmbus_device_id *id = NULL;
-	struct vmbus_dynid *dynid;
+	scoped_guard(spinlock, &drv->dynids.lock) {
+		struct vmbus_dynid *dynid;
 
-	spin_lock(&drv->dynids.lock);
-	list_for_each_entry(dynid, &drv->dynids.list, node) {
-		if (guid_equal(&dynid->id.guid, guid)) {
-			id = &dynid->id;
-			break;
+		list_for_each_entry(dynid, &drv->dynids.list, node) {
+			if (guid_equal(&dynid->id.guid, guid)) {
+				memcpy(id_copy, &dynid->id, sizeof(*id_copy));
+				return id_copy;
+			}
 		}
 	}
-	spin_unlock(&drv->dynids.lock);
 
-	return id;
+	return NULL;
 }
 
 static const struct hv_vmbus_device_id vmbus_device_null;
@@ -685,7 +685,8 @@ static const struct hv_vmbus_device_id vmbus_device_null;
  * If there is no match, return NULL.
  */
 static const struct hv_vmbus_device_id *hv_vmbus_get_id(const struct hv_driver *drv,
-							struct hv_device *dev)
+							struct hv_device *dev,
+							struct hv_vmbus_device_id *id_copy)
 {
 	const guid_t *guid = &dev->dev_type;
 	const struct hv_vmbus_device_id *id;
@@ -697,7 +698,7 @@ static const struct hv_vmbus_device_id *hv_vmbus_get_id(const struct hv_driver *
 		return NULL;
 
 	/* Look at the dynamic ids first, before the static ones */
-	id = hv_vmbus_dynid_match((struct hv_driver *)drv, guid);
+	id = hv_vmbus_dynid_match((struct hv_driver *)drv, guid, id_copy);
 	if (!id)
 		id = hv_vmbus_dev_match(drv->id_table, guid);
 
@@ -843,13 +844,14 @@ ATTRIBUTE_GROUPS(vmbus_drv);
 static int vmbus_match(struct device *device, const struct device_driver *driver)
 {
 	const struct hv_driver *drv = drv_to_hv_drv(driver);
+	struct hv_vmbus_device_id id_copy;
 	struct hv_device *hv_dev = device_to_hv_device(device);
 
 	/* The hv_sock driver handles all hv_sock offers. */
 	if (is_hvsock_channel(hv_dev->channel))
 		return drv->hvsock;
 
-	if (hv_vmbus_get_id(drv, hv_dev))
+	if (hv_vmbus_get_id(drv, hv_dev, &id_copy))
 		return 1;
 
 	return 0;
@@ -860,13 +862,17 @@ static int vmbus_match(struct device *device, const struct device_driver *driver
  */
 static int vmbus_probe(struct device *child_device)
 {
-	int ret = 0;
+	const struct hv_vmbus_device_id *dev_id;
+	struct hv_vmbus_device_id dev_id_copy;
 	struct hv_driver *drv =
 			drv_to_hv_drv(child_device->driver);
 	struct hv_device *dev = device_to_hv_device(child_device);
-	const struct hv_vmbus_device_id *dev_id;
+	int ret = 0;
 
-	dev_id = hv_vmbus_get_id(drv, dev);
+	dev_id = hv_vmbus_get_id(drv, dev, &dev_id_copy);
+	if (!dev_id && !is_hvsock_channel(dev->channel))
+		return -ENODEV;
+
 	if (drv->probe) {
 		ret = drv->probe(dev, dev_id);
 		if (ret != 0)
