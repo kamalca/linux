@@ -575,13 +575,13 @@ static const struct vm_operations_struct vduse_domain_mmap_ops = {
 	.fault = vduse_domain_mmap_fault,
 };
 
-static int vduse_domain_mmap(struct file *file, struct vm_area_struct *vma)
+static int vduse_domain_mmap_prepare(struct vm_area_desc *desc)
 {
-	struct vduse_iova_domain *domain = file->private_data;
+	struct vduse_iova_domain *domain = desc->file->private_data;
 
-	vm_flags_set(vma, VM_DONTDUMP | VM_DONTEXPAND);
-	vma->vm_private_data = domain;
-	vma->vm_ops = &vduse_domain_mmap_ops;
+	vma_desc_set_flags(desc, VMA_DONTDUMP_BIT, VMA_DONTEXPAND_BIT);
+	desc->private_data = domain;
+	desc->vm_ops = &vduse_domain_mmap_ops;
 
 	return 0;
 }
@@ -606,7 +606,7 @@ static int vduse_domain_release(struct inode *inode, struct file *file)
 
 static const struct file_operations vduse_domain_fops = {
 	.owner = THIS_MODULE,
-	.mmap = vduse_domain_mmap,
+	.mmap_prepare = vduse_domain_mmap_prepare,
 	.release = vduse_domain_release,
 };
 
