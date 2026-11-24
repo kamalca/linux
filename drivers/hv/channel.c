@@ -733,10 +733,13 @@ EXPORT_SYMBOL_GPL(vmbus_alloc_buffer);
  */
 static u64 *request_arr_init(u32 size)
 {
-	int i;
+	u32 i;
 	u64 *req_arr;
 
-	req_arr = kcalloc(size, sizeof(u64), GFP_KERNEL);
+	if (!size)
+		return NULL;
+
+	req_arr = kvcalloc(size, sizeof(*req_arr), GFP_KERNEL);
 	if (!req_arr)
 		return NULL;
 
@@ -763,9 +766,10 @@ static int vmbus_alloc_requestor(struct vmbus_requestor *rqstor, u32 size)
 	if (!rqst_arr)
 		return -ENOMEM;
 
-	bitmap = bitmap_zalloc(size, GFP_KERNEL);
+	bitmap = kvcalloc(size / BITS_PER_LONG + !!(size % BITS_PER_LONG),
+			  sizeof(*bitmap), GFP_KERNEL);
 	if (!bitmap) {
-		kfree(rqst_arr);
+		kvfree(rqst_arr);
 		return -ENOMEM;
 	}
 
@@ -784,8 +788,10 @@ static int vmbus_alloc_requestor(struct vmbus_requestor *rqstor, u32 size)
  */
 static void vmbus_free_requestor(struct vmbus_requestor *rqstor)
 {
-	kfree(rqstor->req_arr);
-	bitmap_free(rqstor->req_bitmap);
+	kvfree(rqstor->req_arr);
+	kvfree(rqstor->req_bitmap);
+	rqstor->req_arr = NULL;
+	rqstor->req_bitmap = NULL;
 }
 
 static int __vmbus_open(struct vmbus_channel *newchannel,
