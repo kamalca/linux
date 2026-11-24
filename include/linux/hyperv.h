@@ -70,8 +70,7 @@
  */
 enum hv_gpadl_type {
 	HV_GPADL_BUFFER,
-	HV_GPADL_RING,
-	HV_GPADL_BUFFER_DECRYPTED
+	HV_GPADL_RING
 };
 
 /* Single-page buffer */
@@ -816,6 +815,16 @@ struct vmbus_gpadl {
 	bool decrypted;
 };
 
+struct vmbus_buffer {
+	void *addr;
+	struct page **chunks;
+	struct page **pages;
+	u32 size;
+	u32 chunk_cnt;
+	u32 gpadl_handle;
+	bool leak;
+};
+
 struct vmbus_channel {
 	struct list_head listentry;
 
@@ -1232,25 +1241,16 @@ extern int vmbus_sendpacket_mpb_desc(struct vmbus_channel *channel,
 				     u32 bufferlen,
 				     u64 requestid);
 
-extern int vmbus_establish_gpadl(struct vmbus_channel *channel,
-				      void *kbuffer,
-				      u32 size,
-				      struct vmbus_gpadl *gpadl);
+int vmbus_establish_gpadl(struct vmbus_channel *channel,
+			  struct vmbus_buffer *buffer);
 
-extern int vmbus_establish_gpadl_caller_decrypted(struct vmbus_channel *channel,
-						  void *kbuffer,
-						  u32 size,
-						  struct vmbus_gpadl *gpadl);
+int vmbus_teardown_gpadl(struct vmbus_channel *channel,
+			 struct vmbus_buffer *buffer);
 
-extern int vmbus_teardown_gpadl(struct vmbus_channel *channel,
-				     struct vmbus_gpadl *gpadl);
+int vmbus_alloc_buffer(struct vmbus_channel *channel, u32 size,
+		       bool confidential, struct vmbus_buffer *buffer);
 
-extern void *vmbus_alloc_buffer(struct vmbus_channel *channel,
-				u32 size,
-				struct page ***chunks_out,
-				u32 *chunk_cnt_out);
-
-extern void vmbus_free_buffer(void *addr, struct page **chunks, u32 chunk_cnt);
+void vmbus_free_buffer(struct vmbus_buffer *buffer);
 
 void vmbus_reset_channel_cb(struct vmbus_channel *channel);
 

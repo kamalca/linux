@@ -134,10 +134,8 @@ static void __free_netvsc_device(struct netvsc_device *nvdev)
 
 	kfree(nvdev->extension);
 
-	vmbus_free_buffer(nvdev->recv_buf, nvdev->recv_buf_chunks,
-			  nvdev->recv_buf_chunk_cnt);
-	vmbus_free_buffer(nvdev->send_buf, nvdev->send_buf_chunks,
-			  nvdev->send_buf_chunk_cnt);
+	vmbus_free_buffer(&nvdev->recv_buffer);
+	vmbus_free_buffer(&nvdev->send_buffer);
 	bitmap_free(nvdev->send_section_map);
 
 	for (i = 0; i < VRSS_CHANNEL_MAX; i++) {
@@ -245,6 +243,7 @@ static void netvsc_revoke_recv_buf(struct hv_device *device,
 		if (ret != 0) {
 			netdev_err(ndev, "unable to send "
 				"revoke receive buffer to netvsp\n");
+			net_device->recv_buffer.leak = true;
 			return;
 		}
 		net_device->recv_section_cnt = 0;
@@ -296,6 +295,7 @@ static void netvsc_revoke_send_buf(struct hv_device *device,
 		if (ret != 0) {
 			netdev_err(ndev, "unable to send "
 				   "revoke send buffer to netvsp\n");
+			net_device->send_buffer.leak = true;
 			return;
 		}
 		net_device->send_section_cnt = 0;
@@ -308,9 +308,12 @@ static void netvsc_teardown_recv_gpadl(struct hv_device *device,
 {
 	int ret;
 
-	if (net_device->recv_buf_gpadl_handle.gpadl_handle) {
+	if (net_device->recv_buffer.leak)
+		return;
+
+	if (net_device->recv_buffer.gpadl_handle) {
 		ret = vmbus_teardown_gpadl(device->channel,
-					   &net_device->recv_buf_gpadl_handle);
+					   &net_device->recv_buffer);
 
 		/* If we failed here, we might as well return and have a leak
 		 * rather than continue and a bugchk
@@ -329,9 +332,12 @@ static void netvsc_teardown_send_gpadl(struct hv_device *device,
 {
 	int ret;
 
-	if (net_device->send_buf_gpadl_handle.gpadl_handle) {
+	if (net_device->send_buffer.leak)
+		return;
+
+	if (net_device->send_buffer.gpadl_handle) {
 		ret = vmbus_teardown_gpadl(device->channel,
-					   &net_device->send_buf_gpadl_handle);
+					   &net_device->send_buffer);
 
 		/* If we failed here, we might as well return and have a leak
 		 * rather than continue and a bugchk
@@ -377,15 +383,13 @@ static int netvsc_init_buf(struct hv_device *device,
 		buf_size = min_t(unsigned int, buf_size,
 				 NETVSC_RECEIVE_BUFFER_SIZE_LEGACY);
 
-	net_device->recv_buf =
-		vmbus_alloc_buffer(device->channel, buf_size,
-				   &net_device->recv_buf_chunks,
-				   &net_device->recv_buf_chunk_cnt);
-	if (!net_device->recv_buf) {
+	ret = vmbus_alloc_buffer(device->channel, buf_size,
+				 device->channel->co_external_memory,
+				 &net_device->recv_buffer);
+	if (ret) {
 		netdev_err(ndev,
 			   "unable to allocate receive buffer of size %u\n",
 			   buf_size);
-		ret = -ENOMEM;
 		goto cleanup;
 	}
 
@@ -396,10 +400,8 @@ static int netvsc_init_buf(struct hv_device *device,
 	 * channel.  Note: This call uses the vmbus connection rather
 	 * than the channel to establish the gpadl handle.
 	 */
-	ret = vmbus_establish_gpadl_caller_decrypted(device->channel,
-						     net_device->recv_buf,
-						     buf_size,
-						     &net_device->recv_buf_gpadl_handle);
+	ret = vmbus_establish_gpadl(device->channel,
+				    &net_device->recv_buffer);
 	if (ret != 0) {
 		netdev_err(ndev,
 			"unable to establish receive buffer's gpadl\n");
@@ -410,8 +412,8 @@ static int netvsc_init_buf(struct hv_device *device,
 	init_packet = &net_device->channel_init_pkt;
 	memset(init_packet, 0, sizeof(struct nvsp_message));
 	init_packet->hdr.msg_type = NVSP_MSG1_TYPE_SEND_RECV_BUF;
-	init_packet->msg.v1_msg.send_recv_buf.
-		gpadl_handle = net_device->recv_buf_gpadl_handle.gpadl_handle;
+	init_packet->msg.v1_msg.send_recv_buf.gpadl_handle =
+		net_device->recv_buffer.gpadl_handle;
 	init_packet->msg.v1_msg.
 		send_recv_buf.id = NETVSC_RECEIVE_BUFFER_ID;
 
@@ -487,14 +489,12 @@ static int netvsc_init_buf(struct hv_device *device,
 	buf_size = device_info->send_sections * device_info->send_section_size;
 	buf_size = round_up(buf_size, PAGE_SIZE);
 
-	net_device->send_buf =
-		vmbus_alloc_buffer(device->channel, buf_size,
-				   &net_device->send_buf_chunks,
-				   &net_device->send_buf_chunk_cnt);
-	if (!net_device->send_buf) {
+	ret = vmbus_alloc_buffer(device->channel, buf_size,
+				 device->channel->co_external_memory,
+				 &net_device->send_buffer);
+	if (ret) {
 		netdev_err(ndev, "unable to allocate send buffer of size %u\n",
 			   buf_size);
-		ret = -ENOMEM;
 		goto cleanup;
 	}
 	net_device->send_buf_size = buf_size;
@@ -503,10 +503,8 @@ static int netvsc_init_buf(struct hv_device *device,
 	 * channel.  Note: This call uses the vmbus connection rather
 	 * than the channel to establish the gpadl handle.
 	 */
-	ret = vmbus_establish_gpadl_caller_decrypted(device->channel,
-						     net_device->send_buf,
-						     buf_size,
-						     &net_device->send_buf_gpadl_handle);
+	ret = vmbus_establish_gpadl(device->channel,
+				    &net_device->send_buffer);
 	if (ret != 0) {
 		netdev_err(ndev,
 			   "unable to establish send buffer's gpadl\n");
@@ -518,7 +516,7 @@ static int netvsc_init_buf(struct hv_device *device,
 	memset(init_packet, 0, sizeof(struct nvsp_message));
 	init_packet->hdr.msg_type = NVSP_MSG1_TYPE_SEND_SEND_BUF;
 	init_packet->msg.v1_msg.send_send_buf.gpadl_handle =
-		net_device->send_buf_gpadl_handle.gpadl_handle;
+		net_device->send_buffer.gpadl_handle;
 	init_packet->msg.v1_msg.send_send_buf.id = NETVSC_SEND_BUFFER_ID;
 
 	trace_nvsp_send(ndev, init_packet);
@@ -965,7 +963,7 @@ static void netvsc_copy_to_send_buf(struct netvsc_device *net_device,
 				    struct hv_page_buffer *pb,
 				    bool xmit_more)
 {
-	char *start = net_device->send_buf;
+	char *start = net_device->send_buffer.addr;
 	char *dest = start + (section_index * net_device->send_section_size)
 		     + pend_size;
 	int i;
@@ -1472,7 +1470,7 @@ static int netvsc_receive(struct net_device *ndev,
 	const struct nvsp_message *nvsp = hv_pkt_data(desc);
 	u32 msglen = hv_pkt_datalen(desc);
 	u16 q_idx = channel->offermsg.offer.sub_channel_index;
-	char *recv_buf = net_device->recv_buf;
+	char *recv_buf = net_device->recv_buffer.addr;
 	u32 status = NVSP_STAT_SUCCESS;
 	int i;
 	int count = 0;
