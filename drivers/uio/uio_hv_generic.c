@@ -27,6 +27,7 @@
 #include <linux/if_ether.h>
 #include <linux/skbuff.h>
 #include <linux/hyperv.h>
+#include <linux/mm.h>
 #include <linux/slab.h>
 
 #include "../hv/hyperv_vmbus.h"
@@ -147,19 +148,24 @@ static void hv_uio_rescind(struct vmbus_channel *channel)
 	vmbus_device_unregister(channel->device_obj);
 }
 
-/* Function used for mmap of ring buffer sysfs interface.
- * The ring buffer is allocated as contiguous memory by vmbus_open
- */
+/* Function used for mmap of the ring buffer sysfs interface. */
 static int
 hv_uio_ring_mmap_prepare(struct vmbus_channel *channel, struct vm_area_desc *desc)
 {
-	void *ring_buffer = page_address(channel->ringbuffer_page);
+	unsigned long pages = vma_desc_pages(desc);
+	pgoff_t offset = desc->pgoff;
 
-	if (channel->state != CHANNEL_OPENED_STATE)
+	if (channel->state != CHANNEL_OPENED_STATE || !channel->ringbuffer.pages)
 		return -ENODEV;
+	if (!pages || offset >= channel->ringbuffer_pagecount ||
+	    pages > channel->ringbuffer_pagecount - offset)
+		return -EINVAL;
 
-	mmap_action_simple_ioremap(desc, virt_to_phys(ring_buffer),
-			channel->ringbuffer_pagecount << PAGE_SHIFT);
+	if (!channel->co_ring_buffer)
+		desc->page_prot = pgprot_decrypted(desc->page_prot);
+
+	mmap_action_map_kernel_pages(desc, desc->start,
+				     channel->ringbuffer.pages + offset, pages);
 	return 0;
 }
 
@@ -245,7 +251,6 @@ hv_uio_probe(struct hv_device *dev,
 {
 	struct vmbus_channel *channel = dev->channel;
 	struct hv_uio_private_data *pdata;
-	void *ring_buffer;
 	int ret;
 	size_t ring_size = hv_dev_ring_size(channel);
 
@@ -276,12 +281,11 @@ hv_uio_probe(struct hv_device *dev,
 
 	/* mem resources */
 	pdata->info.mem[TXRX_RING_MAP].name = "txrx_rings";
-	ring_buffer = page_address(channel->ringbuffer_page);
-	pdata->info.mem[TXRX_RING_MAP].addr
-		= (uintptr_t)virt_to_phys(ring_buffer);
-	pdata->info.mem[TXRX_RING_MAP].size
-		= channel->ringbuffer_pagecount << PAGE_SHIFT;
-	pdata->info.mem[TXRX_RING_MAP].memtype = UIO_MEM_IOVA;
+	pdata->info.mem[TXRX_RING_MAP].addr =
+		(uintptr_t)channel->ringbuffer.addr;
+	pdata->info.mem[TXRX_RING_MAP].size =
+		channel->ringbuffer_pagecount << PAGE_SHIFT;
+	pdata->info.mem[TXRX_RING_MAP].memtype = UIO_MEM_VIRTUAL;
 
 	pdata->info.mem[INT_PAGE_MAP].name = "int_page";
 	pdata->info.mem[INT_PAGE_MAP].addr

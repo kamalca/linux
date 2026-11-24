@@ -808,13 +808,6 @@ struct vmbus_device {
 
 #define VMBUS_DEFAULT_MAX_PKT_SIZE 4096
 
-struct vmbus_gpadl {
-	u32 gpadl_handle;
-	u32 size;
-	void *buffer;
-	bool decrypted;
-};
-
 struct vmbus_buffer {
 	void *addr;
 	struct page **chunks;
@@ -844,10 +837,8 @@ struct vmbus_channel {
 	bool rescind_ref; /* got rescind msg, got channel reference */
 	struct completion rescind_event;
 
-	struct vmbus_gpadl ringbuffer_gpadlhandle;
-
-	/* Allocated memory for ring buffer */
-	struct page *ringbuffer_page;
+	/* Allocated memory and GPADL state for ring buffer */
+	struct vmbus_buffer ringbuffer;
 	u32 ringbuffer_pagecount;
 	u32 ringbuffer_send_offset;
 	struct hv_ring_buffer_info outbound;	/* send to parent */
